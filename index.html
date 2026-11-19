@@ -53,6 +53,7 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
+html{background:var(--bg)}
 body{
   background:var(--bg);color:var(--ink);font-family:var(--font-ui);
   font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;
@@ -87,11 +88,13 @@ button{cursor:pointer;background:none;border:0;padding:0}
 .tab svg{width:20px;height:20px}
 .tab[aria-current="page"]{color:var(--ink);background:var(--surface-2)}
 .tab[aria-current="page"] svg{color:var(--gold)}
-.tabs-wrap{position:fixed;inset:auto 0 0 0;z-index:20;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:linear-gradient(transparent,var(--bg) 40%)}
-.tabs-wrap .tabs{max-width:520px;margin:0 auto}
+.tabs-wrap{position:fixed;inset:auto 0 0 0;z-index:20;padding:6px 10px calc(6px + env(safe-area-inset-bottom));background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid var(--line)}
+.tabs-wrap::after{content:"";position:absolute;left:0;right:0;top:100%;height:120px;background:var(--bg)}
+.tabs-wrap .tabs{max-width:560px;margin:0 auto;border:0;background:none;padding:0;backdrop-filter:none;-webkit-backdrop-filter:none}
 @media (min-width:900px){
-  .tabs-wrap{position:static;padding:0;background:none}
-  .tabs-wrap .tabs{max-width:none;margin:0}
+  .tabs-wrap{position:static;padding:0;background:none;border:0;backdrop-filter:none;-webkit-backdrop-filter:none}
+  .tabs-wrap::after{display:none}
+  .tabs-wrap .tabs{max-width:none;margin:0;border:1px solid var(--line);background:color-mix(in srgb,var(--surface) 80%,transparent);padding:4px}
   .tab{flex-direction:row;gap:8px;font-size:14px;padding:9px 16px}
   .head-row{display:flex;align-items:center;gap:20px}
   .head-row .tabs-wrap{flex:0 1 620px}
@@ -544,6 +547,7 @@ footer.foot{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);co
 .q-cont{text-align:center;color:var(--gold);font-size:13px;margin:6px 0 4px}
 .q-tools[hidden]{display:none}
 
+@media (max-width:440px){.sheet-head .chip-btn .cb-t{display:none}.sheet-head .chip-btn{padding:10px}.sheet-head h3{min-width:0}}
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important}
 }
@@ -731,7 +735,8 @@ footer.foot{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);co
   <div class="sheet-head">
     <button class="icon-btn" id="rdClose" aria-label="رجوع"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m9 5 7 7-7 7"/></svg></button>
     <h3 id="rdTitle">أذكار<small id="rdSub"></small></h3>
-    <button class="chip-btn" id="rdFocus" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg>خلوة</button>
+    <button class="chip-btn" id="rdListen" hidden></button>
+    <button class="chip-btn" id="rdFocus" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg><span class="cb-t">خلوة</span></button>
   </div>
   <div class="rd-progress"><i id="rdBar" style="width:0"></i></div>
   <div class="sheet-body" id="rdBody">
@@ -998,6 +1003,23 @@ const CATS = [
   ]}
 ];
 CATS.forEach(c => c.items.forEach(it => { it.id = c.id + ':' + it.k; it.cat = c; }));
+/* human recordings: Quranic adhkar by Mishary Alafasy (per ayah); other adhkar from Hisn al-Muslim chapter recordings */
+const rng = (a, b) => Array.from({length:b-a+1}, (_,i) => a+i);
+const QA = {kursi:[262], ikhlas:rng(6222,6225), falaq:rng(6226,6230), nas:rng(6231,6236), mu:rng(6222,6236), fatiha:rng(1,7), baqara:[292,293]};
+const AUD = {
+  'morning:kursi':{qa:QA.kursi}, 'morning:ikhlas':{qa:QA.ikhlas}, 'morning:falaq':{qa:QA.falaq}, 'morning:nas':{qa:QA.nas},
+  'evening:kursi':{qa:QA.kursi}, 'evening:ikhlas':{qa:QA.ikhlas}, 'evening:falaq':{qa:QA.falaq}, 'evening:nas':{qa:QA.nas},
+  'prayer:p8':{qa:QA.kursi}, 'prayer:p9':{qa:QA.mu},
+  'sleep:s1':{qa:QA.mu}, 'sleep:s2':{qa:QA.kursi}, 'sleep:s3':{qa:QA.baqara},
+  'ruqya:r1':{qa:QA.fatiha}, 'ruqya:r2':{qa:QA.kursi}, 'ruqya:r3':{qa:QA.baqara}, 'ruqya:r4':{qa:QA.mu},
+  'daily:o1':{ha:[11]}, 'daily:o2':{ha:[14]}, 'daily:o3':{ha:[15]}, 'daily:o4':{ha:[71]}, 'daily:o5':{ha:[97]}, 'daily:o6':{ha:[65]},
+  'distress:k1':{ha:[36]}, 'distress:k2':{ha:[36]}, 'distress:k4':{ha:[36]}, 'distress:k3':{ha:[35]},
+  'wake:w1':{ha:[2]}, 'wake:w2':{ha:[2]}
+};
+const CA = {morning:[28], evening:[28], sleep:[29], wake:[2], prayer:[26], distress:[35,36]};
+CATS.forEach(c => { c.ca = CA[c.id] || null; c.items.forEach(it => Object.assign(it, AUD[it.id] || {})); });
+const HISN = n => `https://www.hisnmuslim.com/audio/ar/ar_7esn_AlMoslem_by_Doors_${String(n).padStart(3,'0')}.mp3`;
+const ALAF = n => `https://cdn.islamic.network/quran/audio/128/ar.alafasy/${n}.mp3`;
 const ALL = CATS.flatMap(c => c.items);
 const byId = id => ALL.find(i => i.id === id);
 const catById = id => CATS.find(c => c.id === id);
@@ -1188,7 +1210,7 @@ function cardHTML(it, opts={}){
         <button class="dk-count num" data-count aria-label="المتبقي ${left}"><svg viewBox="0 0 58 58"><circle class="bg" cx="29" cy="29" r="26"/><circle class="fg" cx="29" cy="29" r="26" stroke-dasharray="${CIRC}" stroke-dashoffset="${CIRC*(1-Math.min(c,it.n)/it.n)}"/></svg><span>${done ? '✓' : ar(left)}</span></button>
       </div>
       <div class="dk-acts">
-        <button class="dk-act" data-act="listen" aria-label="استمع">${svg(IC.play)}</button>
+        ${it.qa || it.ha ? `<button class="dk-act" data-act="listen" aria-label="${it.qa ? 'استمع بصوت مشاري العفاسي' : 'استمع للباب بصوت بشري'}">${svg(IC.play)}</button>` : ''}
         <button class="dk-act" data-act="copy" aria-label="انسخ">${svg(IC.copy)}</button>
         <button class="dk-act" data-act="share" aria-label="شارك كبطاقة">${svg(IC.share)}</button>
         <button class="dk-act ${fav?'on':''}" data-act="fav" aria-label="${fav?'أزل من المحفوظة':'احفظ'}" aria-pressed="${fav}">${svg(IC.save)}</button>
@@ -1210,6 +1232,7 @@ function openReader(catId, focusId, focusMode=false){
   $('#rdTitle').firstChild.textContent = c.t;
   $('#rdSub').textContent = c.d;
   $('#rdList').innerHTML = c.items.map(it => cardHTML(it)).join('');
+  stopSpeak(); const rl = $('#rdListen'); rl.hidden = !c.ca; rl.classList.remove('on'); rl.innerHTML = svg(IC.play) + '<span class="cb-t">استمع للباب</span>'; rl.setAttribute('aria-label', 'استمع للباب كاملًا بصوت بشري');
   setFocus(focusMode);
   $('#reader').classList.add('on'); document.body.style.overflow='hidden';
   rdProgress();
@@ -1253,19 +1276,24 @@ function tick(el){
 }
 
 /* ---------- actions ---------- */
-let speaking = null;
-function stopSpeak(){ try{ speechSynthesis.cancel(); }catch(e){} if(speaking){ speaking.classList.remove('on'); speaking.innerHTML = svg(IC.play); speaking=null; } }
+const dAudio = new Audio(); dAudio.preload = 'none';
+let DP = {list:[], i:0, btn:null};
+function stopSpeak(){ try{ dAudio.pause(); }catch(e){} if(DP.btn){ DP.btn.classList.remove('on'); DP.btn.innerHTML = DP.btn.id === 'rdListen' ? svg(IC.play) + '<span class="cb-t">استمع للباب</span>' : svg(IC.play); } DP = {list:[], i:0, btn:null}; }
+function playList(urls, btn, title){
+  stopSpeak(); try{ qAudio.pause(); }catch(e){}
+  DP = {list:urls, i:0, btn};
+  btn.classList.add('on'); btn.innerHTML = btn.id === 'rdListen' ? svg(IC.stop) + '<span class="cb-t">إيقاف</span>' : svg(IC.stop);
+  dAudio.src = urls[0];
+  dAudio.play().catch(() => { toast('تعذّر تشغيل الصوت. تحقّق من اتصالك بالإنترنت.'); stopSpeak(); });
+  try{ if('mediaSession' in navigator) navigator.mediaSession.metadata = new MediaMetadata({title, artist: urls[0].includes('alafasy') ? 'مشاري العفاسي' : 'حصن المسلم', album:'رَوْح'}); }catch(e){}
+}
+dAudio.addEventListener('ended', () => { if(!DP.btn) return; DP.i++; if(DP.i < DP.list.length){ dAudio.src = DP.list[DP.i]; dAudio.play().catch(() => stopSpeak()); } else stopSpeak(); });
+dAudio.addEventListener('error', () => { if(DP.btn){ toast('تعذّر تحميل التسجيل. تحقّق من اتصالك.'); stopSpeak(); } });
 function speak(btn, it){
-  if(speaking === btn){ stopSpeak(); return; }
-  stopSpeak();
-  if(!('speechSynthesis' in window)){ toast('الاستماع غير متاح في هذا المتصفح'); return; }
-  const voices = speechSynthesis.getVoices(); const v = voices.find(v=>/^ar/i.test(v.lang));
-  if(voices.length && !v){ toast('لا يتوفر صوت عربي في جهازك'); return; }
-  const u = new SpeechSynthesisUtterance(it.t.replace(/﴿[^﴾]*﴾/g,' '));
-  u.lang = 'ar-SA'; u.rate = .82; if(v) u.voice = v;
-  u.onend = u.onerror = () => { if(speaking===btn) stopSpeak(); };
-  speaking = btn; btn.classList.add('on'); btn.innerHTML = svg(IC.stop);
-  speechSynthesis.speak(u);
+  if(DP.btn === btn){ stopSpeak(); return; }
+  const urls = it.qa ? it.qa.map(ALAF) : (it.ha || []).map(HISN);
+  if(!urls.length) return;
+  playList(urls, btn, it.h || it.cat.t);
 }
 async function copyText(txt){
   try{ await navigator.clipboard.writeText(txt); toast('نُسخ النص'); }
@@ -1456,6 +1484,7 @@ document.addEventListener('keydown', e => {
 });
 $('#nowStart').onclick = e => openReader(e.currentTarget.dataset.cat);
 $('#nowFocus').onclick = e => openReader(e.currentTarget.dataset.cat, null, true);
+$('#rdListen').onclick = e => { const b = e.currentTarget; if(DP.btn === b){ stopSpeak(); return; } if(RD && RD.ca) playList(RD.ca.map(HISN), b, RD.t); };
 $('#rdClose').onclick = closeReader; $('#rdDoneClose').onclick = closeReader;
 $('#rdFocus').onclick = () => { const on = $('#rdFocus').getAttribute('aria-pressed')!=='true'; setFocus(on); const c=$('#rdList .dk.current')||firstPending(); markCurrent(c); c?.scrollIntoView({block:'center'}); };
 $('#btnSearch').onclick = () => { $('#search').classList.add('on'); renderSearch($('#srInput').value); setTimeout(()=>$('#srInput').focus(),30); };
@@ -1473,7 +1502,7 @@ $('#resetDay').onclick = e => {
   if(Date.now()-resetArm < 3000){ S.day={date:todayKey(),c:{},done:[]}; save(); refreshHome(); e.target.textContent='ابدأ اليوم من جديد'; toast('بدأت يومك من جديد'); resetArm=0; return; }
   resetArm = Date.now(); e.target.textContent = 'اضغط مرة أخرى للتأكيد'; setTimeout(()=>{ e.target.textContent='ابدأ اليوم من جديد'; },3000);
 };
-try{ speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = () => {}; }catch(e){}
+
 
 /* ---------- gold burst ---------- */
 const BURST = (() => {
