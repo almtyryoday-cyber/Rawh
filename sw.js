@@ -1,5 +1,5 @@
 // رَوْح — يحفظ الموقع ليعمل بلا إنترنت
-const CACHE = 'rawh-v1';
+const CACHE = 'rawh-v3';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));
@@ -9,7 +9,7 @@ self.addEventListener('activate', e => {
 });
 self.addEventListener('fetch', e => {
   const req = e.request;
-  if (req.method !== 'GET') return;
+  if (req.method !== 'GET' || req.destination === 'audio' || req.headers.has('range')) return;
   // الصفحة: من الشبكة أولًا ثم من النسخة المحفوظة
   if (req.mode === 'navigate') {
     e.respondWith(fetch(req).then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put('./index.html', copy)); return r; })
@@ -18,7 +18,7 @@ self.addEventListener('fetch', e => {
   }
   // الخطوط والأيقونات: من النسخة المحفوظة أولًا
   e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(r => {
-    if (r.ok || r.type === 'opaque') { const copy = r.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
+    if ((r.ok && r.status === 200) || r.type === 'opaque') { const copy = r.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
     return r;
   })));
 });
