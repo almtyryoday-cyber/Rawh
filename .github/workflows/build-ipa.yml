@@ -20,9 +20,15 @@ jobs:
       - name: Create iOS project
         run: |
           mkdir -p ios/Rawh/web ios/Rawh/Assets.xcassets/AppIcon.appiconset
-          cp index.html ios/Rawh/web/
+          # the page with the in-app icon script (may be named روح.html)
+          HTML=$( (grep -l "__sfReady" ./*.html || true) | head -n 1 )
+          [ -z "$HTML" ] && HTML=index.html
+          echo "Using page: $HTML"
+          cp "$HTML" ios/Rawh/web/index.html
           cp manifest.webmanifest sw.js *.png ios/Rawh/web/ 2>/dev/null || true
-          cp icon-1024.png ios/Rawh/Assets.xcassets/AppIcon.appiconset/
+          # app icon: icon-1024.png if uploaded, otherwise made from icon-512.png
+          ICON=ios/Rawh/Assets.xcassets/AppIcon.appiconset/icon-1024.png
+          if [ -f icon-1024.png ]; then cp icon-1024.png "$ICON"; else sips -z 1024 1024 icon-512.png --out "$ICON"; fi
           echo '{"info":{"author":"xcode","version":1}}' > ios/Rawh/Assets.xcassets/Contents.json
           echo '{"images":[{"filename":"icon-1024.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"author":"xcode","version":1}}' > ios/Rawh/Assets.xcassets/AppIcon.appiconset/Contents.json
 
