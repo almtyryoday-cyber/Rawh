@@ -553,6 +553,7 @@ import CoreLocation
 import UserNotifications
 import ActivityKit
 import AppIntents
+import Security
 
 // MARK: - الحالة المحفوظة
 
@@ -3032,6 +3033,8 @@ struct RemindersView: View {
     @State private var testKind = "morning"
     @State private var testTick = 0
     @State private var testState: TestState = .idle
+    @State private var showRecorder = false
+    @State private var showEleven = false
     var body: some View {
         SubScreen(title: "التذكيرات", subtitle: "تصلك إشعارات من الجوال حتى لو كان التطبيق مقفلاً") {
             Image(systemName: "bell.badge.fill")
@@ -3101,7 +3104,20 @@ struct RemindersView: View {
                     }
                 }
                 .tint(app.skin.gold)
-                if app.s.voiceAlerts { VoicePreviewRow() }
+                if app.s.voiceAlerts {
+                    VoicePreviewRow()
+                    HStack(spacing: 10) {
+                        Button { showRecorder = true } label: {
+                            Label("سجّل بصوتك", systemImage: "mic.fill").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(GhostButtonStyle(skin: app.skin))
+                        Button { showEleven = true } label: {
+                            Label("ElevenLabs", systemImage: "waveform").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(GhostButtonStyle(skin: app.skin))
+                    }
+                    Text("الأولوية: تسجيلك ← صوت ElevenLabs ← صوت الجوال").rawhText(11.5).foregroundStyle(app.skin.sub)
+                }
             }
             .padding(16)
             .surface(20, skin: app.skin)
@@ -3154,6 +3170,8 @@ struct RemindersView: View {
             Text("أوقات الأذكار والصلاة محسوبة لمدينة \(app.city.n). اضغط على الإشعار ليفتح لك القسم مباشرة.").rawhText(12).foregroundStyle(app.skin.sub).multilineTextAlignment(.center)
         }
         .sensoryFeedback(.selection, trigger: bell)
+        .sheet(isPresented: $showRecorder) { VoiceRecorderView().environmentObject(app) }
+        .sheet(isPresented: $showEleven) { ElevenLabsView().environmentObject(app) }
     }
 }
 
@@ -3553,7 +3571,12 @@ enum VoiceAlerts {
 
     /// صوت التنبيه: العبارة المسجّلة إن وُجدت وكان الصوت مفعّلًا، وإلا النغمة العادية
     static func sound(_ key: String, enabled: Bool) -> UNNotificationSound {
-        guard enabled, exists(key) else { return .default }
+        guard enabled else { return .default }
+        // الصوت البشري المسجّل أولًا
+        if VoiceRecorder.hasHuman(key) { return UNNotificationSound(named: UNNotificationSoundName(VoiceRecorder.humanName(key))) }
+        // ثم صوت ElevenLabs
+        if ElevenVoice.has(key) { return UNNotificationSound(named: UNNotificationSoundName(ElevenVoice.fileName(key))) }
+        guard exists(key) else { return .default }
         return UNNotificationSound(named: UNNotificationSoundName(fileName(key)))
     }
 
@@ -3624,10 +3647,17 @@ enum VoiceAlerts {
         let play = {
             try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
             try? AVAudioSession.sharedInstance().setActive(true)
-            player = try? AVAudioPlayer(contentsOf: fileURL(key))
+            player = try? AVAudioPlayer(contentsOf: bestURL(key))
             player?.play()
         }
-        if exists(key) { play() } else { prepare { if exists(key) { play() } } }
+        if exists(key) || VoiceRecorder.hasHuman(key) || ElevenVoice.has(key) { play() } else { prepare { if exists(key) { play() } } }
+    }
+
+    /// أفضل صوت متوفر: تسجيلك ← ElevenLabs ← صوت الجوال
+    static func bestURL(_ key: String) -> URL {
+        if VoiceRecorder.hasHuman(key) { return VoiceRecorder.humanURL(key) }
+        if ElevenVoice.has(key) { return ElevenVoice.fileURL(key) }
+        return fileURL(key)
     }
 }
 
@@ -3668,6 +3698,475 @@ struct VoicePreviewRow: View {
         case "white": return "الأيام البيض"
         default: return PrayerTimes.names[key] ?? key
         }
+    }
+}
+
+
+// MARK: - تسجيل صوت بشري للتنبيهات
+
+final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate, AVAudioPlayerDelegate {
+    @Published var recordingKey: String? = nil
+    @Published var playingKey: String? = nil
+    @Published var level: Float = 0
+    @Published var denied = false
+    @Published var version = 0          // يتغيّر بعد كل تسجيل/حذف لتحديث الواجهة
+    private var recorder: AVAudioRecorder?
+    private var player: AVAudioPlayer?
+    private var meter: Timer?
+
+    static func humanName(_ key: String) -> String { "rawh-human-\(key).caf" }
+    static func humanURL(_ key: String) -> URL { VoiceAlerts.soundsDir.appendingPathComponent(humanName(key)) }
+    static func hasHuman(_ key: String) -> Bool { FileManager.default.fileExists(atPath: humanURL(key).path) }
+
+    func toggleRecord(_ key: String, done: @escaping () -> Void) {
+        if recordingKey == key { stopRecording(); done(); return }
+        stopRecording(); stopPlaying()
+        AVAudioApplication.requestRecordPermission { granted in
+            DispatchQueue.main.async {
+                guard granted else { self.denied = true; return }
+                self.start(key)
+            }
+        }
+    }
+
+    private func start(_ key: String) {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+        try? session.setActive(true)
+        // صيغة يقبلها iOS كصوت تنبيه: PCM خطي داخل ملف caf
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: 44100.0,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false
+        ]
+        let url = Self.humanURL(key)
+        try? FileManager.default.removeItem(at: url)
+        guard let r = try? AVAudioRecorder(url: url, settings: settings) else { return }
+        r.delegate = self
+        r.isMeteringEnabled = true
+        r.record(forDuration: 25)        // التنبيه لازم أقل من ٣٠ ثانية
+        recorder = r
+        recordingKey = key
+        meter = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+            guard let self = self, let r = self.recorder else { return }
+            r.updateMeters()
+            let db = r.averagePower(forChannel: 0)
+            self.level = max(0, min(1, (db + 50) / 50))
+        }
+    }
+
+    func stopRecording() {
+        guard recorder != nil else { return }
+        recorder?.stop()
+        recorder = nil
+        meter?.invalidate(); meter = nil
+        level = 0
+        recordingKey = nil
+        version += 1
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+    }
+
+    func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
+        DispatchQueue.main.async {
+            if self.recorder === recorder { self.stopRecording() }
+        }
+    }
+
+    func play(_ key: String) {
+        if playingKey == key { stopPlaying(); return }
+        stopPlaying()
+        let url = VoiceAlerts.bestURL(key)
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        guard let p = try? AVAudioPlayer(contentsOf: url) else { return }
+        p.delegate = self
+        p.play()
+        player = p
+        playingKey = key
+    }
+
+    func stopPlaying() { player?.stop(); player = nil; playingKey = nil }
+
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        DispatchQueue.main.async { self.playingKey = nil }
+    }
+
+    func delete(_ key: String) {
+        stopPlaying()
+        try? FileManager.default.removeItem(at: Self.humanURL(key))
+        version += 1
+    }
+}
+
+struct VoiceRecorderView: View {
+    @EnvironmentObject var app: AppState
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var rec = VoiceRecorder()
+    @State private var tick = 0
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                ScreenBackground()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("سجّل كل عبارة مرة وحدة بصوتك أو بصوت من تحب، وبتسمعها مع التنبيه بدل الصوت الآلي. اضغط الميكروفون للتسجيل، واضغطه مرة ثانية للإيقاف.")
+                            .rawhText(13).foregroundStyle(app.skin.sub).lineSpacing(4)
+                        if rec.denied {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("الميكروفون مقفل لـ رَوْح.").rawhText(14, .semibold).foregroundStyle(app.skin.text)
+                                Button("افتح الإعدادات") { if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) } }
+                                    .buttonStyle(GhostButtonStyle(skin: app.skin))
+                            }
+                            .padding(14).surface(18, skin: app.skin)
+                        }
+                        ForEach(VoiceAlerts.phrases, id: \.key) { p in
+                            row(p.key, p.text)
+                        }
+                        Text("نصيحة: سجّل في مكان هادئ، وقرّب الجوال من فمك، واترك ثانية قبل ما تبدأ.").rawhText(12).foregroundStyle(app.skin.sub)
+                    }
+                    .padding(18)
+                }
+            }
+            .navigationTitle("سجّل بصوتك")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("تم") { rec.stopRecording(); rec.stopPlaying(); dismiss() }.tint(app.skin.gold) } }
+            .sensoryFeedback(.impact(weight: .medium), trigger: tick)
+        }
+        .preferredColorScheme(app.skin.scheme)
+        .onDisappear { rec.stopRecording(); rec.stopPlaying(); Reminders.schedule(app.s) }
+    }
+
+    @ViewBuilder private func row(_ key: String, _ text: String) -> some View {
+        let human = VoiceRecorder.hasHuman(key) && rec.version >= 0
+        let recording = rec.recordingKey == key
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Text(VoicePreviewRow.short(key)).rawhText(12, .bold).foregroundStyle(app.skin.gold)
+                Spacer()
+                Label(human ? "صوت بشري" : "صوت آلي", systemImage: human ? "person.wave.2.fill" : "waveform")
+                    .rawhText(11, .semibold)
+                    .foregroundStyle(human ? app.skin.green : app.skin.sub)
+            }
+            Text("«\(text)»").rawhText(16, .medium).foregroundStyle(app.skin.text)
+            HStack(spacing: 12) {
+                // تسجيل
+                Button {
+                    tick += 1
+                    rec.toggleRecord(key) { Reminders.schedule(app.s) }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: recording ? "stop.fill" : "mic.fill")
+                            .contentTransition(.symbolEffect(.replace))
+                        Text(recording ? "إيقاف" : (human ? "أعد التسجيل" : "سجّل")).rawhText(14, .bold)
+                    }
+                    .foregroundStyle(recording ? Color.white : app.skin.onGold)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(Capsule().fill(recording ? Color.red : app.skin.gold))
+                }
+                .buttonStyle(PressScale())
+                if recording {
+                    // مستوى الصوت أثناء التسجيل
+                    HStack(spacing: 3) {
+                        ForEach(0..<12, id: \.self) { i in
+                            Capsule().fill(Color.red.opacity(Double(i) / 12 < Double(rec.level) ? 0.9 : 0.2))
+                                .frame(width: 4, height: 6 + CGFloat(i % 4) * 4)
+                        }
+                    }
+                    .animation(.easeOut(duration: 0.08), value: rec.level)
+                } else {
+                    Button { rec.play(key) } label: {
+                        Image(systemName: rec.playingKey == key ? "stop.circle.fill" : "play.circle.fill")
+                            .font(.system(size: 30)).foregroundStyle(app.skin.gold)
+                            .contentTransition(.symbolEffect(.replace))
+                    }
+                    .buttonStyle(.plain)
+                    if human {
+                        Button(role: .destructive) { rec.delete(key); Reminders.schedule(app.s) } label: {
+                            Image(systemName: "trash").font(.system(size: 18)).foregroundStyle(app.skin.sub)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                Spacer()
+            }
+        }
+        .padding(14)
+        .surface(18, skin: app.skin, stroke: recording ? Color.red.opacity(0.7) : nil)
+    }
+}
+
+
+// MARK: - أصوات ElevenLabs للتنبيهات
+
+enum Keychain {
+    static func set(_ value: String, for key: String) {
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: key]
+        SecItemDelete(q as CFDictionary)
+        guard !value.isEmpty else { return }
+        var add = q
+        add[kSecValueData as String] = Data(value.utf8)
+        SecItemAdd(add as CFDictionary, nil)
+    }
+    static func get(_ key: String) -> String? {
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: key,
+                                kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let d = out as? Data else { return nil }
+        return String(data: d, encoding: .utf8)
+    }
+}
+
+final class ElevenVoice: ObservableObject {
+    struct Voice: Identifiable, Hashable {
+        let id: String
+        let name: String
+        let preview: URL?
+        let info: String
+    }
+
+    static let fileTag = "eleven"
+    static func fileName(_ key: String) -> String { "rawh-\(fileTag)-\(key).caf" }
+    static func fileURL(_ key: String) -> URL { VoiceAlerts.soundsDir.appendingPathComponent(fileName(key)) }
+    static func has(_ key: String) -> Bool { FileManager.default.fileExists(atPath: fileURL(key).path) }
+    static var hasAny: Bool { VoiceAlerts.phrases.contains { has($0.key) } }
+
+    @Published var apiKey: String = Keychain.get("rawh.eleven.key") ?? ""
+    @Published var voices: [Voice] = []
+    @Published var selected: String = UserDefaults.standard.string(forKey: "rawh.eleven.voice") ?? ""
+    @Published var message: String = ""
+    @Published var failed = false
+    @Published var working = false
+    @Published var progress: Double = 0
+    @Published var previewing: String? = nil
+    private var player: AVPlayer?
+
+    func saveKey() { Keychain.set(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), for: "rawh.eleven.key") }
+    func select(_ id: String) { selected = id; UserDefaults.standard.set(id, forKey: "rawh.eleven.voice") }
+
+    private func request(_ path: String, method: String = "GET", body: [String: Any]? = nil) -> URLRequest? {
+        guard let url = URL(string: "https://api.elevenlabs.io" + path) else { return nil }
+        var r = URLRequest(url: url)
+        r.httpMethod = method
+        r.setValue(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), forHTTPHeaderField: "xi-api-key")
+        if let body {
+            r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            r.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        }
+        r.timeoutInterval = 60
+        return r
+    }
+
+    private func explain(_ code: Int, _ data: Data) -> String {
+        switch code {
+        case 401: return "المفتاح غير صحيح. انسخه من جديد من ElevenLabs."
+        case 402, 429: return "انتهى رصيد الأحرف أو تجاوزت الحد في حسابك على ElevenLabs."
+        default:
+            let txt = String(data: data, encoding: .utf8) ?? ""
+            return "خطأ من ElevenLabs (\(code)). \(txt.prefix(120))"
+        }
+    }
+
+    @MainActor func loadVoices() async {
+        saveKey()
+        guard !apiKey.isEmpty, let r = request("/v1/voices") else { failed = true; message = "اكتب مفتاح ElevenLabs أول."; return }
+        working = true; failed = false; message = "جاري تحميل الأصوات…"
+        defer { working = false }
+        do {
+            let (d, resp) = try await URLSession.shared.data(for: r)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard code == 200 else { failed = true; message = explain(code, d); return }
+            let json = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any]
+            let list = (json?["voices"] as? [[String: Any]]) ?? []
+            voices = list.compactMap { v in
+                guard let id = v["voice_id"] as? String, let name = v["name"] as? String else { return nil }
+                let labels = (v["labels"] as? [String: Any]) ?? [:]
+                let info = ["gender", "accent", "age", "description"].compactMap { labels[$0] as? String }.joined(separator: " · ")
+                return Voice(id: id, name: name, preview: (v["preview_url"] as? String).flatMap { URL(string: $0) }, info: info)
+            }
+            if selected.isEmpty || !voices.contains(where: { $0.id == selected }), let first = voices.first { select(first.id) }
+            message = voices.isEmpty ? "ما فيه أصوات في حسابك." : "اختر صوتًا ثم ولّد العبارات."
+        } catch {
+            failed = true; message = "تعذّر الاتصال. تأكد من الإنترنت."
+        }
+    }
+
+    func preview(_ v: Voice) {
+        if previewing == v.id { player?.pause(); previewing = nil; return }
+        guard let u = v.preview else { return }
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        player = AVPlayer(url: u)
+        player?.play()
+        previewing = v.id
+    }
+
+    /// يولّد العبارات كلها بالصوت المختار ويحفظها أصوات تنبيه
+    @MainActor func generateAll() async {
+        saveKey()
+        guard !apiKey.isEmpty, !selected.isEmpty else { failed = true; message = "اختر صوتًا أول."; return }
+        working = true; failed = false; progress = 0
+        defer { working = false }
+        let phrases = VoiceAlerts.phrases
+        for (i, p) in phrases.enumerated() {
+            message = "جاري توليد «\(VoicePreviewRow.short(p.key))»… (\(AR.n(i + 1)) من \(AR.n(phrases.count)))"
+            let body: [String: Any] = [
+                "text": p.text,
+                "model_id": "eleven_multilingual_v2",
+                "voice_settings": ["stability": 0.55, "similarity_boost": 0.8]
+            ]
+            guard let r = request("/v1/text-to-speech/\(selected)?output_format=mp3_44100_128", method: "POST", body: body) else { continue }
+            do {
+                let (d, resp) = try await URLSession.shared.data(for: r)
+                let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+                guard code == 200 else { failed = true; message = explain(code, d); return }
+                let mp3 = FileManager.default.temporaryDirectory.appendingPathComponent("rawh-\(p.key).mp3")
+                try d.write(to: mp3)
+                try Self.convertToCAF(mp3, Self.fileURL(p.key))
+                try? FileManager.default.removeItem(at: mp3)
+            } catch {
+                failed = true; message = "تعذّر توليد «\(VoicePreviewRow.short(p.key))»."
+                return
+            }
+            progress = Double(i + 1) / Double(phrases.count)
+        }
+        message = "تم ✓ صارت تنبيهاتك بصوت ElevenLabs."
+    }
+
+    /// iOS يقبل أصوات التنبيه بصيغة PCM داخل ملف caf
+    static func convertToCAF(_ src: URL, _ dst: URL) throws {
+        let input = try AVAudioFile(forReading: src)
+        let fmt = input.processingFormat
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(input.length)) else { return }
+        try input.read(into: buffer)
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: fmt.sampleRate,
+            AVNumberOfChannelsKey: fmt.channelCount,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false
+        ]
+        try? FileManager.default.removeItem(at: dst)
+        let out = try AVAudioFile(forWriting: dst, settings: settings, commonFormat: fmt.commonFormat, interleaved: fmt.isInterleaved)
+        try out.write(from: buffer)
+    }
+
+    func deleteAll() {
+        for p in VoiceAlerts.phrases { try? FileManager.default.removeItem(at: Self.fileURL(p.key)) }
+        message = "رجعت التنبيهات للصوت السابق."
+    }
+}
+
+struct ElevenLabsView: View {
+    @EnvironmentObject var app: AppState
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var el = ElevenVoice()
+    @State private var tick = 0
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                ScreenBackground()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        // ١ المفتاح
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label("مفتاح ElevenLabs", systemImage: "key.fill").rawhText(15, .bold).foregroundStyle(app.skin.text)
+                            Text("في elevenlabs.io: Developers (القائمة الجانبية) ← API Keys ← Create API Key، وفعّل صلاحيتي Text to Speech و Voices (read)، ثم انسخ المفتاح هنا. يُحفظ في جوالك بأمان.")
+                                .rawhText(12.5).foregroundStyle(app.skin.sub).lineSpacing(3)
+                            SecureField("الصق المفتاح هنا", text: $el.apiKey)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .padding(12)
+                                .surface(14, skin: app.skin)
+                                .environment(\.layoutDirection, .leftToRight)
+                            Button {
+                                tick += 1
+                                Task { await el.loadVoices() }
+                            } label: {
+                                Label("حمّل أصواتي", systemImage: "arrow.down.circle.fill").frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(GhostButtonStyle(skin: app.skin))
+                            .disabled(el.working)
+                        }
+                        .padding(16).surface(20, skin: app.skin)
+
+                        // ٢ اختيار الصوت
+                        if !el.voices.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Label("اختر الصوت", systemImage: "person.wave.2.fill").rawhText(15, .bold).foregroundStyle(app.skin.text)
+                                ForEach(el.voices) { v in
+                                    HStack(spacing: 10) {
+                                        Button { el.select(v.id) } label: {
+                                            HStack(spacing: 10) {
+                                                Image(systemName: el.selected == v.id ? "checkmark.circle.fill" : "circle")
+                                                    .foregroundStyle(el.selected == v.id ? app.skin.gold : app.skin.sub)
+                                                    .contentTransition(.symbolEffect(.replace))
+                                                VStack(alignment: .leading, spacing: 2) {
+                                                    Text(v.name).rawhText(15, .semibold).foregroundStyle(app.skin.text)
+                                                    if !v.info.isEmpty { Text(v.info).rawhText(11).foregroundStyle(app.skin.sub).lineLimit(1) }
+                                                }
+                                                Spacer()
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
+                                        if v.preview != nil {
+                                            Button { el.preview(v) } label: {
+                                                Image(systemName: el.previewing == v.id ? "stop.circle.fill" : "play.circle.fill")
+                                                    .font(.system(size: 26)).foregroundStyle(app.skin.gold)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                    .padding(.vertical, 6)
+                                    Divider().overlay(app.skin.line)
+                                }
+                                Text("كل أصوات ElevenLabs تتكلم عربي بنموذج Multilingual v2، حتى لو كان وصفها إنجليزي.").rawhText(11.5).foregroundStyle(app.skin.sub)
+                            }
+                            .padding(16).surface(20, skin: app.skin)
+
+                            // ٣ التوليد
+                            Button {
+                                tick += 1
+                                Task { await el.generateAll(); Reminders.schedule(app.s) }
+                            } label: {
+                                Label("ولّد عبارات التنبيه", systemImage: "waveform.badge.plus").frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(GoldButtonStyle(skin: app.skin))
+                            .disabled(el.working)
+                        }
+
+                        if el.working && el.progress > 0 {
+                            ProgressView(value: el.progress).tint(app.skin.gold)
+                        }
+                        if !el.message.isEmpty {
+                            Text(el.message).rawhText(13, .medium).foregroundStyle(el.failed ? Color.red : app.skin.gold)
+                        }
+
+                        if ElevenVoice.hasAny {
+                            VoicePreviewRow()
+                                .padding(16).surface(20, skin: app.skin)
+                            Button(role: .destructive) { el.deleteAll(); Reminders.schedule(app.s) } label: {
+                                Label("احذف أصوات ElevenLabs", systemImage: "trash").frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(GhostButtonStyle(skin: app.skin))
+                        }
+                        Text("تستهلك العبارات الإحدى عشر تقريبًا ٤٠٠ حرف من رصيدك، والخطة المجانية تكفي.").rawhText(11.5).foregroundStyle(app.skin.sub)
+                    }
+                    .padding(18)
+                }
+            }
+            .navigationTitle("أصوات ElevenLabs")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("تم") { el.saveKey(); dismiss() }.tint(app.skin.gold) } }
+            .sensoryFeedback(.selection, trigger: tick)
+        }
+        .preferredColorScheme(app.skin.scheme)
+        .task { if !el.apiKey.isEmpty && el.voices.isEmpty { await el.loadVoices() } }
     }
 }
 
