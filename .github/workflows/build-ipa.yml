@@ -1,0 +1,209 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Create iOS project
+        run: |
+          mkdir -p ios/Rawh/web ios/Rawh/Assets.xcassets/AppIcon.appiconset
+          cp index.html ios/Rawh/web/
+          cp manifest.webmanifest sw.js *.png ios/Rawh/web/ 2>/dev/null || true
+          cp icon-1024.png ios/Rawh/Assets.xcassets/AppIcon.appiconset/
+          echo '{"info":{"author":"xcode","version":1}}' > ios/Rawh/Assets.xcassets/Contents.json
+          echo '{"images":[{"filename":"icon-1024.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"author":"xcode","version":1}}' > ios/Rawh/Assets.xcassets/AppIcon.appiconset/Contents.json
+
+          cat > ios/project.yml <<'EOF'
+          name: Rawh
+          options:
+            bundleIdPrefix: com.rawh
+            deploymentTarget:
+              iOS: "15.0"
+          targets:
+            Rawh:
+              type: application
+              platform: iOS
+              sources:
+                - path: Rawh
+                  excludes:
+                    - "web/**"
+                - path: Rawh/web
+                  type: folder
+                  buildPhase: resources
+              info:
+                path: Rawh/Info.plist
+                properties:
+                  CFBundleDisplayName: "رَوْح"
+                  CFBundleShortVersionString: "1.0"
+                  CFBundleVersion: "1"
+                  CFBundleDevelopmentRegion: ar
+                  UILaunchScreen: {}
+                  UIStatusBarStyle: UIStatusBarStyleLightContent
+                  UIViewControllerBasedStatusBarAppearance: true
+                  UIRequiresFullScreen: true
+                  UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+                  UIBackgroundModes: [audio]
+                  NSMotionUsageDescription: "يستخدم رَوْح حساسات الجوال لتحديد اتجاه القبلة."
+                  ITSAppUsesNonExemptEncryption: false
+              settings:
+                base:
+                  PRODUCT_BUNDLE_IDENTIFIER: com.rawh.adhkar
+                  PRODUCT_NAME: Rawh
+                  TARGETED_DEVICE_FAMILY: "1,2"
+                  SWIFT_VERSION: "5.0"
+                  ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+                  CODE_SIGNING_ALLOWED: NO
+                  CODE_SIGNING_REQUIRED: NO
+          EOF
+
+          cat > ios/Rawh/AppDelegate.swift <<'EOF'
+          import UIKit
+          import WebKit
+          import AVFoundation
+
+          @main
+          final class AppDelegate: UIResponder, UIApplicationDelegate {
+              var window: UIWindow?
+              func application(_ application: UIApplication,
+                               didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+                  // Quran recitation keeps playing with the silent switch on and when the screen locks
+                  try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+                  let w = UIWindow(frame: UIScreen.main.bounds)
+                  w.rootViewController = WebViewController()
+                  w.backgroundColor = UIColor(red: 12/255, green: 19/255, blue: 17/255, alpha: 1)
+                  w.makeKeyAndVisible()
+                  window = w
+                  return true
+              }
+          }
+
+          final class WebViewController: UIViewController, WKUIDelegate, WKNavigationDelegate, WKScriptMessageHandler {
+              private var webView: WKWebView!
+              private let bg = UIColor(red: 12/255, green: 19/255, blue: 17/255, alpha: 1)
+
+              override var preferredStatusBarStyle: UIStatusBarStyle {
+                  traitCollection.userInterfaceStyle == .light ? .darkContent : .lightContent
+              }
+
+              override func loadView() {
+                  let config = WKWebViewConfiguration()
+                  config.websiteDataStore = .default()
+                  config.allowsInlineMediaPlayback = true
+                  config.mediaTypesRequiringUserActionForPlayback = []
+                  config.userContentController.add(self, name: "sf")
+                  config.userContentController.add(self, name: "theme")
+                  webView = WKWebView(frame: .zero, configuration: config)
+                  webView.uiDelegate = self
+                  webView.navigationDelegate = self
+                  webView.isOpaque = false
+                  webView.backgroundColor = bg
+                  webView.scrollView.backgroundColor = bg
+                  webView.scrollView.contentInsetAdjustmentBehavior = .never
+                  view = webView
+              }
+
+              override func viewDidLoad() {
+                  super.viewDidLoad()
+                  guard let dir = Bundle.main.url(forResource: "web", withExtension: nil) else { return }
+                  webView.loadFileURL(dir.appendingPathComponent("index.html"), allowingReadAccessTo: dir)
+              }
+
+              // Messages from the page
+              func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+                  if message.name == "theme", let t = message.body as? String {
+                      overrideUserInterfaceStyle = (t == "light") ? .light : .dark
+                      setNeedsStatusBarAppearanceUpdate()
+                      return
+                  }
+                  if message.name == "sf", let names = message.body as? [String] {
+                      // Draw Apple's SF Symbols on the device and hand them to the page
+                      let cfg = UIImage.SymbolConfiguration(pointSize: 64, weight: .medium)
+                      let fmt = UIGraphicsImageRendererFormat()
+                      fmt.scale = 2
+                      fmt.opaque = false
+                      var out: [String: String] = [:]
+                      for name in names {
+                          let options = name.split(separator: "|").map(String.init)
+                          guard let img = options.lazy.compactMap({ UIImage(systemName: $0, withConfiguration: cfg) }).first?
+                                  .withTintColor(.white, renderingMode: .alwaysOriginal) else { continue }
+                          let png = UIGraphicsImageRenderer(size: img.size, format: fmt).pngData { _ in img.draw(at: .zero) }
+                          out[name] = "data:image/png;base64," + png.base64EncodedString()
+                      }
+                      guard let data = try? JSONSerialization.data(withJSONObject: out),
+                            let json = String(data: data, encoding: .utf8) else { return }
+                      webView.evaluateJavaScript("window.__sfReady && window.__sfReady(" + json + ")", completionHandler: nil)
+                  }
+              }
+
+              // Links in the main page open in Safari
+              func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                           decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+                  if let url = navigationAction.request.url,
+                     navigationAction.navigationType == .linkActivated,
+                     navigationAction.targetFrame?.isMainFrame ?? true,
+                     url.scheme == "http" || url.scheme == "https" {
+                      UIApplication.shared.open(url); decisionHandler(.cancel); return
+                  }
+                  decisionHandler(.allow)
+              }
+
+              func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                           for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+                  if let url = navigationAction.request.url { UIApplication.shared.open(url) }
+                  return nil
+              }
+
+              func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                           initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+                  let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+                  a.addAction(UIAlertAction(title: "تم", style: .default) { _ in completionHandler() })
+                  present(a, animated: true)
+              }
+
+              func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                           initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+                  let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+                  a.addAction(UIAlertAction(title: "إلغاء", style: .cancel) { _ in completionHandler(false) })
+                  a.addAction(UIAlertAction(title: "نعم", style: .destructive) { _ in completionHandler(true) })
+                  present(a, animated: true)
+              }
+          }
+          EOF
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build (unsigned)
+        working-directory: ios
+        run: |
+          xcodebuild -project Rawh.xcodeproj -target Rawh -sdk iphoneos -configuration Release \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build | tail -n 40
+
+      - name: Package IPA
+        working-directory: ios
+        run: |
+          mkdir -p Payload
+          cp -R build/Release-iphoneos/Rawh.app Payload/
+          zip -qry ../Rawh.ipa Payload
+          ls -lh ../Rawh.ipa
+
+      - name: Publish to Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest -y --cleanup-tag || true
+          gh release create latest Rawh.ipa --title "رَوْح — آخر نسخة" --notes "ثبّته عن طريق Sideloadly أو AltStore"
