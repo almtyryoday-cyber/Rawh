@@ -194,10 +194,38 @@ struct Saved: Codable {
     var sebhaPhrase: Int = 0
     var sebhaTarget: Int = 33
     var sebhaRounds: Int = 0
-    var reminders: [String: Bool] = ["morning": true, "evening": true, "sleep": false, "prayers": false, "fast": false, "white": false]
+    var reminders: [String: Bool] = ["morning": true, "evening": true, "sleep": false, "prayers": false, "fast": false, "white": false, "daily": false]
+    var reminderEvery: Int = 3              // ذكر خلال اليوم: كل كم ساعة
     var introSeen: Bool = false
     var lastSurah: Int = 0
     var lastAyah: Int = 0
+
+    init() {}
+
+    // قراءة متسامحة: أي حقل جديد يأخذ قيمته الافتراضية بدل ما يضيع تقدّمك عند التحديث
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = Saved()
+        skin = (try? c.decode(Skin.self, forKey: .skin)) ?? d.skin
+        cityId = (try? c.decode(String.self, forKey: .cityId)) ?? d.cityId
+        textScale = (try? c.decode(Double.self, forKey: .textScale)) ?? d.textScale
+        favorites = (try? c.decode([String].self, forKey: .favorites)) ?? d.favorites
+        day = (try? c.decode(String.self, forKey: .day)) ?? d.day
+        counts = (try? c.decode([String: Int].self, forKey: .counts)) ?? d.counts
+        history = (try? c.decode([String: Int].self, forKey: .history)) ?? d.history
+        done = (try? c.decode([String: [String]].self, forKey: .done)) ?? d.done
+        sebhaCount = (try? c.decode(Int.self, forKey: .sebhaCount)) ?? d.sebhaCount
+        sebhaPhrase = (try? c.decode(Int.self, forKey: .sebhaPhrase)) ?? d.sebhaPhrase
+        sebhaTarget = (try? c.decode(Int.self, forKey: .sebhaTarget)) ?? d.sebhaTarget
+        sebhaRounds = (try? c.decode(Int.self, forKey: .sebhaRounds)) ?? d.sebhaRounds
+        var r = (try? c.decode([String: Bool].self, forKey: .reminders)) ?? [:]
+        for (k, v) in d.reminders where r[k] == nil { r[k] = v }
+        reminders = r
+        reminderEvery = (try? c.decode(Int.self, forKey: .reminderEvery)) ?? d.reminderEvery
+        introSeen = (try? c.decode(Bool.self, forKey: .introSeen)) ?? d.introSeen
+        lastSurah = (try? c.decode(Int.self, forKey: .lastSurah)) ?? d.lastSurah
+        lastAyah = (try? c.decode(Int.self, forKey: .lastAyah)) ?? d.lastAyah
+    }
 }
 
 final class AppState: ObservableObject {
@@ -454,13 +482,32 @@ struct ReminderItem: Identifiable, Hashable {
 
 enum Reminders {
     static let items: [ReminderItem] = [
-        ReminderItem(id: "morning", t: "أذكار الصباح", d: "بعد الفجر بعشرين دقيقة"),
-        ReminderItem(id: "evening", t: "أذكار المساء", d: "بعد العصر بربع ساعة"),
-        ReminderItem(id: "sleep", t: "أذكار النوم", d: "الساعة ١٠:٣٠ مساءً"),
+        ReminderItem(id: "morning", t: "أذكار الصباح", d: "بعد الفجر بعشرين دقيقة، مع ذكر من أذكار الصباح"),
+        ReminderItem(id: "evening", t: "أذكار المساء", d: "بعد العصر بربع ساعة، مع ذكر من أذكار المساء"),
+        ReminderItem(id: "daily", t: "ذكر خلال اليوم", d: "ذكر قصير أو حديث من ٨ صباحًا إلى ١٠ مساءً"),
+        ReminderItem(id: "sleep", t: "أذكار النوم", d: "الساعة ١٠:٣٠ مساءً، مع ذكر من أذكار النوم"),
         ReminderItem(id: "prayers", t: "مواقيت الصلوات الخمس", d: "تنبيه عند دخول كل صلاة"),
         ReminderItem(id: "fast", t: "صيام الاثنين والخميس", d: "تذكير في الليلة السابقة ٩ مساءً"),
         ReminderItem(id: "white", t: "صيام الأيام البيض", d: "تذكير مساء ١٢ من كل شهر هجري")
     ]
+
+    /// أذكار قصيرة تصلح نصًّا كاملًا في الإشعار
+    static func shortAdhkar(_ catId: String) -> [Dhikr] {
+        let items = DB.cat(catId)?.items ?? []
+        let short = items.filter { $0.t.count <= 220 }
+        return short.isEmpty ? items : short
+    }
+
+    /// مجموعة «ذكر خلال اليوم»: عبارات التسبيح + أذكار قصيرة + أحاديث في فضل الذكر
+    static var dailyPool: [(title: String, body: String, cat: String?)] {
+        var out: [(title: String, body: String, cat: String?)] = []
+        for p in DB.data.phrases { out.append(("ذكر", p, nil)) }
+        for c in DB.cats {
+            for d in c.items where d.t.count <= 160 && d.q != true { out.append((c.t, d.t, c.id)) }
+        }
+        for h in DB.data.hadith where h.t.count <= 200 { out.append(("حديث · \(h.r)", h.t, nil)) }
+        return out
+    }
 
     static func requestAndSchedule(_ s: Saved) {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { ok, _ in
@@ -475,56 +522,93 @@ enum Reminders {
         let city = DB.city(s.cityId)
         let g = AR.gregorian
         let start = Date()
+        let dayIndex = g.ordinality(of: .day, in: .era, for: start) ?? 0
 
-        func add(_ id: String, _ title: String, _ body: String, at date: Date) {
+        func content(_ title: String, _ body: String, sub: String? = nil, cat: String? = nil) -> UNMutableNotificationContent {
+            let c = UNMutableNotificationContent()
+            c.title = title; c.body = body; c.sound = .default
+            if let sub { c.subtitle = sub }
+            if let cat { c.userInfo = ["cat": cat]; c.threadIdentifier = cat }
+            return c
+        }
+        func add(_ id: String, _ c: UNMutableNotificationContent, at date: Date) {
             guard date > Date() else { return }
-            let content = UNMutableNotificationContent()
-            content.title = title; content.body = body; content.sound = .default
             let comps = g.dateComponents([.year, .month, .day, .hour, .minute], from: date)
-            let req = UNNotificationRequest(identifier: id, content: content, trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: false))
-            center.add(req)
+            center.add(UNNotificationRequest(identifier: id, content: c, trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)))
         }
-        func addRepeating(_ id: String, _ title: String, _ body: String, _ comps: DateComponents) {
-            let content = UNMutableNotificationContent()
-            content.title = title; content.body = body; content.sound = .default
-            center.add(UNNotificationRequest(identifier: id, content: content, trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)))
-        }
+        func pick(_ list: [Dhikr], _ i: Int) -> Dhikr? { list.isEmpty ? nil : list[((i % list.count) + list.count) % list.count] }
 
-        for i in 0..<12 {
+        // الحد الأقصى ٦٤ إشعارًا مجدولًا في iOS، ونعيد الجدولة كل مرة تفتح التطبيق
+        let morning = shortAdhkar("morning"), evening = shortAdhkar("evening"), sleep = shortAdhkar("sleep")
+        for i in 0..<8 {
             guard let day = g.date(byAdding: .day, value: i, to: start) else { continue }
             let t = PrayerTimes.compute(for: day, city: city)
-            if on["morning"] == true {
-                add("m\(i)", "أذكار الصباح", "﴿ أَلَا بِذِكْرِ اللَّهِ تَطْمَئِنُّ الْقُلُوبُ ﴾", at: t.date("fajr", on: day).addingTimeInterval(20 * 60))
+            if on["morning"] == true, let d = pick(morning, dayIndex + i) {
+                add("m\(i)", content("أذكار الصباح ☀️", d.t, sub: d.h, cat: "morning"), at: t.date("fajr", on: day).addingTimeInterval(20 * 60))
             }
-            if on["evening"] == true {
-                add("e\(i)", "أذكار المساء", "حان وقت أذكار المساء", at: t.date("asr", on: day).addingTimeInterval(15 * 60))
+            if on["evening"] == true, let d = pick(evening, dayIndex + i) {
+                add("e\(i)", content("أذكار المساء 🌙", d.t, sub: d.h, cat: "evening"), at: t.date("asr", on: day).addingTimeInterval(15 * 60))
             }
-            if on["prayers"] == true && i < 5 {
+            if on["sleep"] == true, let d = pick(sleep, dayIndex + i) {
+                add("s\(i)", content("أذكار النوم", d.t, sub: d.h, cat: "sleep"), at: g.startOfDay(for: day).addingTimeInterval(22.5 * 3600))
+            }
+            if on["prayers"] == true && i < 4 {
                 for k in ["fajr", "dhuhr", "asr", "maghrib", "isha"] {
-                    add("p\(i)\(k)", "حان وقت صلاة \(PrayerTimes.names[k] ?? "")", city.n, at: t.date(k, on: day))
+                    add("p\(i)\(k)", content("حان وقت صلاة \(PrayerTimes.names[k] ?? "")", city.n), at: t.date(k, on: day))
                 }
             }
         }
-        if on["sleep"] == true {
-            var c = DateComponents(); c.hour = 22; c.minute = 30
-            addRepeating("sleep", "أذكار النوم", "اختم يومك بذكر الله", c)
+        if on["daily"] == true {
+            let pool = dailyPool
+            let every = max(2, min(4, s.reminderEvery))
+            var n = 0
+            for i in 0..<3 {
+                guard let day = g.date(byAdding: .day, value: i, to: g.startOfDay(for: start)) else { continue }
+                var h = 8
+                while h <= 22 {
+                    if !pool.isEmpty {
+                        let item = pool[(dayIndex * 7 + n * 5) % pool.count]
+                        add("d\(i)_\(h)", content(item.title, item.body, cat: item.cat), at: day.addingTimeInterval(Double(h) * 3600))
+                    }
+                    n += 1; h += every
+                }
+            }
         }
         if on["fast"] == true {
-            // ليلة الاثنين (الأحد) وليلة الخميس (الأربعاء)
             for (wd, name) in [(1, "الاثنين"), (4, "الخميس")] {
                 var c = DateComponents(); c.weekday = wd; c.hour = 21; c.minute = 0
-                addRepeating("fast\(wd)", "صيام \(name)", "غدًا يوم \(name)، يُستحب صيامه", c)
+                center.add(UNNotificationRequest(identifier: "fast\(wd)", content: content("صيام \(name)", "غدًا يوم \(name)، يُستحب صيامه"), trigger: UNCalendarNotificationTrigger(dateMatching: c, repeats: true)))
             }
         }
         if on["white"] == true {
             let h = AR.hijri
-            for i in 0..<70 {
+            for i in 0..<40 {
                 guard let d = g.date(byAdding: .day, value: i, to: g.startOfDay(for: start)) else { continue }
                 if h.component(.day, from: d) == 12 {
-                    add("white\(i)", "الأيام البيض", "تبدأ غدًا الأيام البيض: ١٣ و١٤ و١٥", at: d.addingTimeInterval(21 * 3600))
+                    add("white\(i)", content("الأيام البيض", "تبدأ غدًا الأيام البيض: ١٣ و١٤ و١٥"), at: d.addingTimeInterval(21 * 3600))
                 }
             }
         }
+    }
+}
+
+// MARK: - فتح الإشعار على قسمه
+
+final class NotificationRouter: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
+    static let shared = NotificationRouter()
+    @Published var openCat: String? = nil
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        if let id = response.notification.request.content.userInfo["cat"] as? String {
+            DispatchQueue.main.async { self.openCat = id }
+        }
+        completionHandler()
+    }
+    // يظهر الإشعار حتى لو كان التطبيق مفتوحًا
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound, .list])
     }
 }
 
@@ -696,15 +780,7 @@ struct Card<C: View>: View {
         content()
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill(highlight ? app.skin.card2 : app.skin.card)
-                    .shadow(color: .black.opacity(app.skin == .sand ? 0.06 : 0.25), radius: 10, y: 4)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(highlight ? app.skin.gold.opacity(0.7) : app.skin.line, lineWidth: highlight ? 1.2 : 0.8)
-            )
+            .surface(radius, skin: app.skin, highlight: highlight, tint: highlight ? app.skin.card2 : nil)
     }
 }
 
@@ -731,7 +807,7 @@ struct GoldButtonStyle: ButtonStyle {
             .font(.system(size: 16, weight: .bold))
             .foregroundStyle(skin.onGold)
             .padding(.horizontal, 20).padding(.vertical, 13)
-            .background(Capsule().fill(LinearGradient(colors: [skin.goldLight, skin.gold], startPoint: .top, endPoint: .bottom)))
+            .goldPill(skin)
             .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
     }
@@ -744,8 +820,7 @@ struct GhostButtonStyle: ButtonStyle {
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(skin.text)
             .padding(.horizontal, 16).padding(.vertical, 12)
-            .background(Capsule().fill(skin.card2.opacity(0.9)))
-            .overlay(Capsule().strokeBorder(skin.line, lineWidth: 0.8))
+            .glassCapsule(skin: skin, fallback: skin.card2.opacity(0.9))
             .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
     }
@@ -768,8 +843,7 @@ struct IconButton: View {
                 .foregroundStyle(active ? app.skin.gold : app.skin.text)
                 .symbolEffect(.bounce, value: tick)
                 .frame(width: size, height: size)
-                .background(Circle().fill(app.skin.card.opacity(0.95)))
-                .overlay(Circle().strokeBorder(active ? app.skin.gold.opacity(0.7) : app.skin.line, lineWidth: 0.8))
+                .glassCircle(skin: app.skin, active: active)
         }
         .buttonStyle(.plain)
         .sensoryFeedback(.selection, trigger: tick)
@@ -825,34 +899,266 @@ struct KaabaIcon: View {
     }
 }
 
-/// شعار رَوْح: قوس المحراب ونجمة
+/// نجمة سداسية منحنية الأضلاع، رؤوسها مدوّرة بيضوية (مفرغة)
+struct SixStar: Shape {
+    var pull: CGFloat = 0.47     // انحناء الأضلاع للداخل
+    var eps: CGFloat = 0.22      // مقدار تدوير الرؤوس
+    var bulge: CGFloat = 0.6     // بروز الرأس البيضوي
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let R = min(r.width, r.height) / 2
+        let c = CGPoint(x: r.midX, y: r.midY)
+        func lerp(_ a: CGPoint, _ b: CGPoint, _ t: CGFloat) -> CGPoint { CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t) }
+        // جزء من منحنى تربيعي بين t0 و t1
+        func sub(_ p0: CGPoint, _ q: CGPoint, _ p1: CGPoint, _ t0: CGFloat, _ t1: CGFloat) -> (CGPoint, CGPoint, CGPoint) {
+            let a = lerp(p0, q, t0), b = lerp(q, p1, t0), m = lerp(a, b, t0)
+            let t = (t1 - t0) / (1 - t0)
+            let a2 = lerp(m, b, t), b2 = lerp(b, p1, t), m2 = lerp(a2, b2, t)
+            return (m, a2, m2)
+        }
+        let tips: [CGPoint] = (0..<6).map { i in
+            let a = -Double.pi / 2 + Double(i) * Double.pi / 3
+            return CGPoint(x: c.x + CGFloat(cos(a)) * R, y: c.y + CGFloat(sin(a)) * R)
+        }
+        var segs: [(CGPoint, CGPoint, CGPoint)] = []
+        for i in 0..<6 {
+            let a = tips[i], b = tips[(i + 1) % 6]
+            let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+            let q = CGPoint(x: c.x + (mid.x - c.x) * pull, y: c.y + (mid.y - c.y) * pull)
+            segs.append(sub(a, q, b, eps, 1 - eps))
+        }
+        p.move(to: segs[0].0)
+        for i in 0..<6 {
+            let s = segs[i]
+            p.addQuadCurve(to: s.2, control: s.1)
+            let tip = tips[(i + 1) % 6], next = segs[(i + 1) % 6].0
+            let k = bulge * 0.12
+            let ctrl = CGPoint(x: tip.x + (tip.x - c.x) * k, y: tip.y + (tip.y - c.y) * k)
+            p.addQuadCurve(to: next, control: ctrl)
+        }
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// كلمة «رَوْح» مرسومة (من خط Lotus Linotype، محوّلة لمسار)
+struct RawhWord: Shape {
+    static let ratio: CGFloat = 1.16079   // الارتفاع ÷ العرض
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        // نملأ العرض ونوسّط عموديًا
+        let w = min(r.width, r.height / Self.ratio)
+        let h = w * Self.ratio
+        // توسيط على حبر الكلمة نفسه (من الفتحة إلى ذيل الحاء)
+        let x0 = r.midX - w / 2 - w * 0.01527, y0 = r.midY - h / 2 - w * 0.15840
+        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x0 + x * w, y: y0 + y * w) }
+        func m(_ x: CGFloat, _ y: CGFloat) { p.move(to: pt(x, y)) }
+        func l(_ x: CGFloat, _ y: CGFloat) { p.addLine(to: pt(x, y)) }
+        func c(_ x1: CGFloat, _ y1: CGFloat, _ x2: CGFloat, _ y2: CGFloat, _ x: CGFloat, _ y: CGFloat) {
+            p.addCurve(to: pt(x, y), control1: pt(x1, y1), control2: pt(x2, y2))
+        }
+        func z() { p.closeSubpath() }
+        m(0.37684,0.71962); c(0.37122,0.71962,0.36061,0.72037,0.34502,0.72185); c(0.32943,0.72329,0.31652,0.72487,0.30631,0.72658); c(0.27581,0.73100,0.24894,0.73740,0.22567,0.74582)
+        c(0.20242,0.75421,0.18082,0.76511,0.16082,0.77851); c(0.13427,0.79676,0.11368,0.81638,0.09906,0.83734); c(0.07785,0.86778,0.06725,0.90044,0.06725,0.93529); c(0.06725,0.96161,0.07339,0.98578,0.08567,1.00781)
+        c(0.09798,1.02987,0.11573,1.04846,0.13889,1.06360); c(0.15935,1.07672,0.18487,1.08671,0.21544,1.09354); c(0.24603,1.10035,0.28058,1.10377,0.31906,1.10377); c(0.33929,1.10377,0.36286,1.10267,0.38976,1.10050)
+        c(0.41669,1.09830,0.43844,1.09576,0.45502,1.09283); l(0.47257,1.08991); c(0.48258,1.08819,0.48966,1.08734,0.49379,1.08734); c(0.49866,1.08734,0.50110,1.08892,0.50110,1.09207)
+        c(0.50110,1.09624,0.49451,1.10197,0.48134,1.10927); c(0.46819,1.11659,0.45078,1.12427,0.42912,1.13231); c(0.40084,1.14302,0.37574,1.15045,0.35380,1.15459); c(0.33188,1.15871,0.30777,1.16079,0.28146,1.16079)
+        c(0.20469,1.16079,0.14418,1.14390,0.09994,1.11014); c(0.05573,1.07642,0.03363,1.03032,0.03363,0.97184); c(0.03363,0.91262,0.05079,0.85999,0.08514,0.81395); c(0.10124,0.79228,0.11884,0.77359,0.13795,0.75787)
+        c(0.15709,0.74212,0.17921,0.72828,0.20432,0.71635); l(0.20432,0.71378); c(0.20042,0.71281,0.19383,0.71171,0.18456,0.71050); c(0.18288,0.71027,0.17751,0.70955,0.16848,0.70834)
+        c(0.14680,0.70492,0.13085,0.70319,0.12064,0.70319); c(0.10895,0.70319,0.09955,0.70448,0.09245,0.70705); c(0.08539,0.70959,0.07857,0.71416,0.07199,0.72074); c(0.06762,0.72487,0.06475,0.72743,0.06339,0.72840)
+        c(0.06206,0.72938,0.06042,0.72986,0.05848,0.72986); c(0.05481,0.72986,0.05298,0.72780,0.05298,0.72366); c(0.05298,0.71930,0.05541,0.71267,0.06029,0.70378); c(0.06516,0.69486,0.07101,0.68650,0.07784,0.67869)
+        c(0.09662,0.65702,0.11686,0.64617,0.13854,0.64617); c(0.14949,0.64617,0.16775,0.64873,0.19333,0.65384); c(0.22283,0.66020,0.24726,0.66429,0.26660,0.66612); c(0.28598,0.66796,0.31394,0.66886,0.35052,0.66886)
+        l(0.38888,0.66846); l(0.40093,0.66846); z(); m(0.55008,0.39692)
+        c(0.55008,0.38839,0.55160,0.37944,0.55464,0.37008); c(0.55768,0.36070,0.56163,0.35247,0.56651,0.34540); c(0.57774,0.32982,0.59040,0.32201,0.60452,0.32201); c(0.61622,0.32201,0.62675,0.32804,0.63610,0.34008)
+        c(0.64549,0.35213,0.65020,0.36561,0.65020,0.38049); c(0.65020,0.39804,0.64337,0.41315,0.62973,0.42581); c(0.61733,0.43774,0.60417,0.44371,0.59025,0.44371); c(0.57856,0.44371,0.56892,0.43932,0.56137,0.43055)
+        c(0.55384,0.42178,0.55008,0.41058,0.55008,0.39692); z(); m(0.56581,0.38447); c(0.56581,0.39106,0.56879,0.39679,0.57476,0.40166)
+        c(0.58072,0.40654,0.58783,0.40897,0.59610,0.40897); c(0.60464,0.40897,0.61208,0.40679,0.61844,0.40242); c(0.62572,0.39755,0.62938,0.39254,0.62938,0.38739); c(0.62938,0.38280,0.62682,0.37720,0.62172,0.37061)
+        c(0.61438,0.36134,0.60610,0.35669,0.59686,0.35669); c(0.58711,0.35669,0.57906,0.36059,0.57271,0.36839); c(0.56811,0.37400,0.56581,0.37937,0.56581,0.38447); z()
+        m(0.67797,0.77413); c(0.67653,0.77413,0.67312,0.77692,0.66774,0.78249); c(0.66286,0.78763,0.65853,0.79113,0.65476,0.79296); c(0.65101,0.79475,0.64634,0.79565,0.64072,0.79565)
+        c(0.62512,0.79565,0.61289,0.79091,0.60400,0.78144); c(0.59511,0.77193,0.59066,0.75901,0.59066,0.74266); c(0.59066,0.72977,0.59290,0.71594,0.59739,0.70120); c(0.60191,0.68647,0.60806,0.67277,0.61587,0.66009)
+        c(0.62876,0.63889,0.64204,0.62828,0.65569,0.62828); c(0.67055,0.62828,0.68344,0.63938,0.69441,0.66155); c(0.70540,0.68370,0.71090,0.70939,0.71090,0.73863); c(0.71090,0.76620,0.70540,0.79503,0.69441,0.82512)
+        c(0.68344,0.85521,0.66835,0.88268,0.64914,0.90752); c(0.63354,0.92775,0.61495,0.94389,0.59335,0.95594); c(0.57179,0.96801,0.55078,0.97406,0.53031,0.97406); c(0.51230,0.97406,0.49208,0.96699,0.46967,0.95284)
+        c(0.46015,0.94676,0.45125,0.94016,0.44295,0.93307); c(0.43467,0.92601,0.43055,0.92139,0.43055,0.91921); c(0.43055,0.91800,0.43121,0.91684,0.43254,0.91576); c(0.43390,0.91466,0.43543,0.91412,0.43716,0.91412)
+        c(0.43910,0.91412,0.44189,0.91472,0.44552,0.91594); l(0.46201,0.92102); c(0.47565,0.92519,0.48546,0.92788,0.49143,0.92909); c(0.49739,0.93029,0.50426,0.93091,0.51207,0.93091)
+        c(0.53104,0.93091,0.54980,0.92614,0.56833,0.91664); c(0.59050,0.90544,0.61049,0.89180,0.62827,0.87570); c(0.64436,0.86135,0.65758,0.84565,0.66791,0.82857); c(0.67828,0.81149,0.68347,0.79711,0.68347,0.78541)
+        c(0.68347,0.78225,0.68291,0.77959,0.68183,0.77740); c(0.68074,0.77522,0.67945,0.77413,0.67797,0.77413); z(); m(0.68166,0.73208)
+        c(0.68044,0.72038,0.67752,0.71053,0.67288,0.70249); c(0.66484,0.68908,0.65534,0.68237,0.64435,0.68237); c(0.63876,0.68237,0.63384,0.68536,0.62955,0.69132); c(0.62530,0.69729,0.62318,0.70417,0.62318,0.71196)
+        c(0.62318,0.72831,0.63461,0.73647,0.65751,0.73647); c(0.66530,0.73647,0.67335,0.73500,0.68166,0.73208); z(); m(0.99668,0.40900)
+        c(0.99668,0.41945,0.99376,0.42882,0.98791,0.43713); c(0.98428,0.44248,0.97880,0.44752,0.97148,0.45227); c(0.96418,0.45704,0.95079,0.46406,0.93130,0.47333); l(0.90861,0.48426)
+        l(0.88926,0.49338); l(0.87499,0.50034); l(0.86072,0.50765); c(0.85560,0.51034,0.85122,0.51267,0.84756,0.51461)
+        l(0.83698,0.52081); l(0.82856,0.52555); l(0.82347,0.52888); c(0.82199,0.52958,0.82076,0.53020,0.81978,0.53069)
+        l(0.81797,0.53069); c(0.81747,0.53020,0.81721,0.52970,0.81721,0.52923); c(0.81721,0.52850,0.81747,0.52752,0.81797,0.52631); c(0.81844,0.52558,0.81942,0.52362,0.82089,0.52046)
+        c(0.82527,0.51096,0.82885,0.50390,0.83165,0.49929); c(0.83446,0.49466,0.83733,0.49122,0.84025,0.48900); c(0.84684,0.48441,0.87426,0.47064,0.92253,0.44771); l(0.94738,0.43602)
+        c(0.97124,0.42483,0.98768,0.41583,0.99668,0.40900); z(); m(0.94772,0.64840); c(0.95310,0.65179,0.95863,0.65696,0.96433,0.66389)
+        c(0.97006,0.67084,0.97487,0.67834,0.97877,0.68641); c(0.98488,0.69881,0.98996,0.71410,0.99398,0.73226); c(0.99798,0.75043,1.00000,0.76705,1.00000,0.78214); c(1.00000,0.80749,0.99433,0.83287,0.98298,0.85834)
+        c(0.97167,0.88383,0.95602,0.90632,0.93602,0.92582); c(0.92164,0.93993,0.90585,0.95155,0.88866,0.96067); c(0.87149,0.96983,0.85684,0.97442,0.84468,0.97442); c(0.83224,0.97442,0.81310,0.96795,0.78725,0.95506)
+        c(0.75875,0.94067,0.74451,0.93164,0.74451,0.92798); c(0.74451,0.92700,0.74505,0.92602,0.74614,0.92506); c(0.74723,0.92408,0.74851,0.92360,0.75000,0.92360); c(0.75195,0.92360,0.75524,0.92433,0.75989,0.92582)
+        l(0.77228,0.92874); l(0.78690,0.93237); c(0.79664,0.93483,0.80579,0.93605,0.81433,0.93605); c(0.83698,0.93605,0.86200,0.92623,0.88942,0.90658)
+        c(0.91681,0.88696,0.94138,0.86122,0.96310,0.82933); c(0.96965,0.81955,0.97406,0.81259,0.97637,0.80845); c(0.97871,0.80433,0.97988,0.80103,0.97988,0.79857); c(0.97988,0.79494,0.97810,0.78869,0.97456,0.77980)
+        c(0.97105,0.77088,0.96649,0.76130,0.96088,0.75109); c(0.95038,0.73183,0.93699,0.71489,0.92070,0.70027); z(); m(0.00000,0.00000)
+        return p
+    }
+}
+
+// MARK: - أيقونة التطبيق (قابلة للتغيير)
+
+enum AppIconChoice: String, CaseIterable, Identifiable {
+    case emerald, night, sand, gold, mihrab
+    var id: String { rawValue }
+    /// اسم الأيقونة البديلة في التطبيق (nil = الأساسية)
+    var assetName: String? {
+        switch self {
+        case .emerald: return nil
+        case .night: return "AppIcon-Night"
+        case .sand: return "AppIcon-Sand"
+        case .gold: return "AppIcon-Gold"
+        case .mihrab: return "AppIcon-Mihrab"
+        }
+    }
+    var title: String {
+        switch self {
+        case .emerald: return "زمرّد"
+        case .night: return "ليل"
+        case .sand: return "رمل"
+        case .gold: return "ذهبي"
+        case .mihrab: return "المحراب"
+        }
+    }
+    var colors: (top: Color, bottom: Color, line: Color) {
+        switch self {
+        case .emerald, .mihrab: return (Color(hex: 0x14473A), Color(hex: 0x062019), Color(hex: 0xE2C88E))
+        case .night: return (Color(hex: 0x1A2220), Color(hex: 0x050807), Color(hex: 0xE2C88E))
+        case .sand: return (Color(hex: 0xFBF5EA), Color(hex: 0xEADFCB), Color(hex: 0x1E5B49))
+        case .gold: return (Color(hex: 0xF1D9A2), Color(hex: 0xB98E45), Color(hex: 0x0B2A22))
+        }
+    }
+    static func current() -> AppIconChoice {
+        let n = UIApplication.shared.alternateIconName
+        return allCases.first { $0.assetName == n } ?? .emerald
+    }
+}
+
+/// معاينة الأيقونة داخل التطبيق (نفس رسمة أيقونة الجوال)
+struct AppIconPreview: View {
+    var choice: AppIconChoice
+    var size: CGFloat = 64
+    var body: some View {
+        let c = choice.colors
+        ZStack {
+            LinearGradient(colors: [c.top, c.bottom], startPoint: .top, endPoint: .bottom)
+            RadialGradient(colors: [c.line.opacity(0.22), .clear], center: UnitPoint(x: 0.5, y: 0.42), startRadius: 0, endRadius: size * 0.55)
+            if choice == .mihrab {
+                ArchShape(shoulder: 0.38).stroke(c.line, style: StrokeStyle(lineWidth: size * 0.025, lineJoin: .round))
+                    .frame(width: size * 0.5, height: size * 0.62).offset(y: size * 0.04)
+                StarBurst().fill(c.line).frame(width: size * 0.08, height: size * 0.08).offset(y: -size * 0.33)
+                Rectangle().fill(c.line).frame(width: size * 0.62, height: size * 0.025).offset(y: size * 0.35)
+            } else {
+                RoundedRectangle(cornerRadius: size * 0.164, style: .continuous)
+                    .stroke(c.line.opacity(0.9), lineWidth: size * 0.0176)
+                    .padding(size * 0.129)
+                RoundedRectangle(cornerRadius: size * 0.137, style: .continuous)
+                    .stroke(c.line.opacity(0.45), lineWidth: size * 0.005)
+                    .padding(size * 0.16)
+                SixStar()
+                    .stroke(c.line, style: StrokeStyle(lineWidth: size * 0.0234, lineCap: .round, lineJoin: .round))
+                    .frame(width: size * 0.654, height: size * 0.654)
+                RawhWord()
+                    .fill(c.line)
+                    .frame(width: size * 0.256, height: size * 0.256 * RawhWord.ratio)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.2237, style: .continuous))
+    }
+}
+
+/// شعار رَوْح: نجمة سداسية برؤوس بيضوية، وفي وسطها «رَوْح»، داخل إطار ناعم الحواف
 struct Emblem: View {
     @EnvironmentObject var app: AppState
     var size: CGFloat = 120
     var animate = false
     @State private var drawn: CGFloat = 0
     var body: some View {
+        let t: CGFloat = animate ? drawn : 1
         ZStack {
-            ArchShape(shoulder: 0.38).trim(from: 0, to: animate ? drawn : 1)
-                .stroke(app.skin.gold, style: StrokeStyle(lineWidth: size * 0.025, lineCap: .round, lineJoin: .round))
-                .frame(width: size * 0.62, height: size * 0.82)
-            ArchShape(shoulder: 0.42).trim(from: 0, to: animate ? drawn : 1)
-                .stroke(app.skin.gold.opacity(0.55), style: StrokeStyle(lineWidth: size * 0.01, lineCap: .round))
-                .frame(width: size * 0.48, height: size * 0.68)
-                .offset(y: size * 0.07)
-            StarBurst().fill(app.skin.goldLight)
-                .frame(width: size * 0.12, height: size * 0.12)
-                .offset(y: -size * 0.5)
+            RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
+                .trim(from: 0, to: t)
+                .stroke(app.skin.gold, style: StrokeStyle(lineWidth: size * 0.022, lineCap: .round))
+            RoundedRectangle(cornerRadius: size * 0.2, style: .continuous)
+                .trim(from: 0, to: t)
+                .stroke(app.skin.gold.opacity(0.45), lineWidth: size * 0.007)
+                .padding(size * 0.045)
+            SixStar()
+                .trim(from: 0, to: t)
+                .stroke(app.skin.gold, style: StrokeStyle(lineWidth: size * 0.03, lineCap: .round, lineJoin: .round))
+                .frame(width: size * 0.76, height: size * 0.76)
+            RawhWord()
+                .fill(app.skin.gold)
+                .frame(width: size * 0.3, height: size * 0.3 * RawhWord.ratio)
                 .opacity(animate ? Double(drawn) : 1)
-            Text("رَوْح")
-                .font(.system(size: size * 0.2, weight: .semibold))
-                .foregroundStyle(app.skin.text)
-                .offset(y: size * 0.1)
-                .opacity(animate ? Double(drawn) : 1)
-            Rectangle().fill(app.skin.gold).frame(width: size * 0.8, height: size * 0.025).offset(y: size * 0.41)
+                .scaleEffect(animate ? 0.9 + 0.1 * drawn : 1)
         }
-        .frame(width: size, height: size * 1.05)
-        .onAppear { if animate { withAnimation(.easeInOut(duration: 1.6)) { drawn = 1 } } }
+        .frame(width: size, height: size)
+        .onAppear { if animate { withAnimation(.easeInOut(duration: 1.8)) { drawn = 1 } } }
+    }
+}
+
+// MARK: - الزجاج السائل (Liquid Glass) — iOS 26، ومظهر البطاقات قبله
+
+extension View {
+    /// سطح البطاقات
+    @ViewBuilder func surface(_ radius: CGFloat, skin: Skin, highlight: Bool = false, tint: Color? = nil, stroke: Color? = nil) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        let strong = stroke != nil || highlight
+        let edge = stroke ?? (highlight ? skin.gold.opacity(0.7) : skin.line)
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular.tint((tint ?? skin.card).opacity(skin == .sand ? 0.6 : 0.5)), in: shape)
+                .overlay(shape.strokeBorder(strong ? edge : edge.opacity(0.6), lineWidth: strong ? 1.2 : 0.6))
+        } else {
+            self.background(shape.fill(tint ?? skin.card))
+                .overlay(shape.strokeBorder(edge, lineWidth: strong ? 1.2 : 0.8))
+        }
+    }
+    /// زر دائري
+    @ViewBuilder func glassCircle(skin: Skin, active: Bool = false) -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect(active ? .regular.tint(skin.gold.opacity(0.35)).interactive() : .regular.interactive(), in: Circle())
+        } else {
+            self.background(Circle().fill(skin.card.opacity(0.95)))
+                .overlay(Circle().strokeBorder(active ? skin.gold.opacity(0.7) : skin.line, lineWidth: 0.8))
+        }
+    }
+    /// كبسولة (أزرار وشرائح)
+    @ViewBuilder func glassCapsule(skin: Skin, tint: Color? = nil, fallback: Color? = nil) -> some View {
+        if #available(iOS 26.0, *) {
+            if let tint { self.glassEffect(.regular.tint(tint).interactive(), in: Capsule()) }
+            else { self.glassEffect(.regular.interactive(), in: Capsule()) }
+        } else {
+            self.background(Capsule().fill(fallback ?? tint ?? skin.card))
+                .overlay(Capsule().strokeBorder(skin.line, lineWidth: 0.8))
+        }
+    }
+    /// الزر الذهبي
+    @ViewBuilder func goldPill(_ skin: Skin) -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular.tint(skin.gold).interactive(), in: Capsule())
+        } else {
+            self.background(Capsule().fill(LinearGradient(colors: [skin.goldLight, skin.gold], startPoint: .top, endPoint: .bottom)))
+        }
+    }
+    /// حبة السبحة الكبيرة
+    @ViewBuilder func beadSurface(_ skin: Skin) -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular.tint(skin.card2.opacity(0.45)).interactive(), in: Circle())
+                .overlay(Circle().strokeBorder(skin.gold.opacity(0.45), lineWidth: 1))
+        } else {
+            self.background(Circle().fill(RadialGradient(colors: [skin.card2, skin.card], center: .topLeading, startRadius: 10, endRadius: 200)))
+                .overlay(Circle().strokeBorder(skin.gold.opacity(0.5), lineWidth: 1.2))
+        }
+    }
+    /// شريط التبويبات يصغر عند التمرير (iOS 26)
+    @ViewBuilder func minimizingTabBar() -> some View {
+        if #available(iOS 26.0, *) { self.tabBarMinimizeBehavior(.onScrollDown) } else { self }
     }
 }
 
@@ -967,8 +1273,7 @@ struct HomeView: View {
         let cat = DB.cat(id) ?? DB.cats[0]
         let p = app.progress(cat)
         return ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(LinearGradient(colors: [app.skin.card2, app.skin.card], startPoint: .topTrailing, endPoint: .bottomLeading))
+            Color.clear
             ArchShape(shoulder: 0.3)
                 .stroke(app.skin.gold.opacity(0.18), lineWidth: 1)
                 .frame(width: 170, height: 230)
@@ -1015,7 +1320,7 @@ struct HomeView: View {
             .padding(20)
         }
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).strokeBorder(app.skin.gold.opacity(0.35), lineWidth: 1))
+        .surface(28, skin: app.skin, tint: app.skin.card2, stroke: app.skin.gold.opacity(0.4))
     }
 
     private var prayerCard: some View {
@@ -1039,7 +1344,7 @@ struct HomeView: View {
                         }
                         .foregroundStyle(app.skin.gold)
                         .padding(.horizontal, 12).padding(.vertical, 7)
-                        .background(Capsule().fill(app.skin.gold.opacity(0.12)))
+                        .glassCapsule(skin: app.skin, tint: app.skin.gold.opacity(0.25), fallback: app.skin.gold.opacity(0.12))
                     }
                     .buttonStyle(.plain)
                 }
@@ -1120,8 +1425,7 @@ struct CategoryTile: View {
             .environment(\.layoutDirection, .rightToLeft)
         }
         .padding(14)
-        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(app.skin.card))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(app.skin.line, lineWidth: 0.8))
+        .surface(20, skin: app.skin)
     }
 }
 
@@ -1188,8 +1492,7 @@ struct ReaderView: View {
                         .foregroundStyle(app.skin.text)
                         .spin(on: resetTick)
                         .frame(width: 40, height: 40)
-                        .background(Circle().fill(app.skin.card))
-                        .overlay(Circle().strokeBorder(app.skin.line, lineWidth: 0.8))
+                        .glassCircle(skin: app.skin)
                 }
                 .buttonStyle(.plain)
             }
@@ -1358,8 +1661,7 @@ struct DhikrCard: View {
             }
         }
         .padding(18)
-        .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(app.skin.card))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(done ? app.skin.green.opacity(0.5) : app.skin.line, lineWidth: done ? 1.2 : 0.8))
+        .surface(24, skin: app.skin, stroke: done ? app.skin.green.opacity(0.55) : nil)
         .contentShape(Rectangle())
         .onTapGesture { if !done { tick += 1; onTap() } }
         .scaleEffect(tick % 2 == 0 ? 1 : 0.995)
@@ -1649,8 +1951,7 @@ struct QuranView: View {
                                 TextField("ابحث عن سورة", text: $query).foregroundStyle(app.skin.text)
                             }
                             .padding(12)
-                            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(app.skin.card))
-                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(app.skin.line, lineWidth: 0.8))
+                            .surface(14, skin: app.skin)
                         }
                         Picker("", selection: $filter) {
                             Text("الكل").tag(0); Text("مكية").tag(1); Text("مدنية").tag(2)
@@ -1713,8 +2014,7 @@ struct SurahRow: View {
                 .environment(\.layoutDirection, .leftToRight)
         }
         .padding(14)
-        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(app.skin.card))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(app.skin.line, lineWidth: 0.8))
+        .surface(18, skin: app.skin)
     }
 }
 
@@ -1749,8 +2049,7 @@ struct SurahView: View {
                     VStack(spacing: 16) {
                         // ترويسة السورة
                         ZStack {
-                            RoundedRectangle(cornerRadius: 20, style: .continuous).fill(app.skin.card)
-                            RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(app.skin.gold.opacity(0.6), lineWidth: 1.2).padding(5)
+                            RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(app.skin.gold.opacity(0.6), lineWidth: 1.2).padding(6)
                             HStack {
                                 EightStar().stroke(app.skin.gold, lineWidth: 1).frame(width: 30, height: 30)
                                 Spacer()
@@ -1764,6 +2063,7 @@ struct SurahView: View {
                             .padding(.horizontal, 22)
                         }
                         .frame(height: 96)
+                        .surface(20, skin: app.skin, stroke: app.skin.gold.opacity(0.35))
 
                         if info.number != 1 && info.number != 9 {
                             Text(Self.bismillah).rawhText(24 * app.s.textScale, .medium).foregroundStyle(app.skin.gold)
@@ -1801,8 +2101,7 @@ struct SurahView: View {
                                         }
                                     }
                                     .padding(16)
-                                    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(current ? app.skin.gold.opacity(0.12) : app.skin.card))
-                                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(current ? app.skin.gold.opacity(0.7) : app.skin.line, lineWidth: current ? 1.2 : 0.8))
+                                    .surface(18, skin: app.skin, tint: current ? app.skin.gold.opacity(0.3) : nil, stroke: current ? app.skin.gold.opacity(0.7) : nil)
                                     .contentShape(Rectangle())
                                     .onTapGesture { selected = a }
                                     .id(a.id)
@@ -1894,8 +2193,7 @@ struct SebhaView: View {
                                         Text(ph).rawhText(14, .medium)
                                             .foregroundStyle(i == app.s.sebhaPhrase ? app.skin.onGold : app.skin.text)
                                             .padding(.horizontal, 14).padding(.vertical, 9)
-                                            .background(Capsule().fill(i == app.s.sebhaPhrase ? app.skin.gold : app.skin.card))
-                                            .overlay(Capsule().strokeBorder(app.skin.line, lineWidth: 0.8))
+                                            .glassCapsule(skin: app.skin, tint: i == app.s.sebhaPhrase ? app.skin.gold : nil)
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -1921,8 +2219,6 @@ struct SebhaView: View {
                                 if app.s.sebhaCount % target == 0 { round += 1 }
                             } label: {
                                 ZStack {
-                                    Circle().fill(RadialGradient(colors: [app.skin.card2, app.skin.card], center: .topLeading, startRadius: 10, endRadius: 200))
-                                    Circle().strokeBorder(app.skin.gold.opacity(0.5), lineWidth: 1.2)
                                     EightStar().stroke(app.skin.gold.opacity(0.12), lineWidth: 1).padding(30)
                                     VStack(spacing: 4) {
                                         Text(AR.n(inRound)).rawhText(58, .bold).foregroundStyle(app.skin.text)
@@ -1931,6 +2227,7 @@ struct SebhaView: View {
                                     }
                                 }
                                 .frame(width: 210, height: 210)
+                                .beadSurface(app.skin)
                             }
                             .buttonStyle(PressScale())
                         }
@@ -2050,8 +2347,7 @@ struct StatsView: View {
                                     .frame(width: 42, height: 42)
                                 }
                                 .padding(12)
-                                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(app.skin.card))
-                                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(app.skin.line, lineWidth: 0.8))
+                                .surface(16, skin: app.skin)
                             }
                         }
                     }
@@ -2074,8 +2370,7 @@ struct StatsView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(app.skin.card))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(app.skin.line, lineWidth: 0.8))
+        .surface(20, skin: app.skin)
     }
 }
 
@@ -2209,8 +2504,7 @@ struct HubTile: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, minHeight: 140, alignment: .topLeading)
-            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(app.skin.card))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(app.skin.line, lineWidth: 0.8))
+            .surface(20, skin: app.skin)
         }
         .buttonStyle(PressScale())
         .sensoryFeedback(.selection, trigger: t)
@@ -2260,8 +2554,7 @@ struct NamesView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(app.skin.card))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(app.skin.line, lineWidth: 0.8))
+                    .surface(16, skin: app.skin)
                 }
             }
         }
@@ -2373,13 +2666,38 @@ struct RemindersView: View {
                     }
                     .tint(app.skin.gold)
                     .padding(.vertical, 12)
+                    if r.id == "daily" && app.s.reminders["daily"] == true {
+                        Picker("كل", selection: Binding(get: { app.s.reminderEvery }, set: { app.s.reminderEvery = $0; Reminders.schedule(app.s) })) {
+                            Text("كل ساعتين").tag(2); Text("كل ٣ ساعات").tag(3); Text("كل ٤ ساعات").tag(4)
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.bottom, 12)
+                    }
                     if r.id != Reminders.items.last?.id { Divider().overlay(app.skin.line) }
                 }
             }
             .padding(.horizontal, 16)
-            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(app.skin.card))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(app.skin.line, lineWidth: 0.8))
-            Text("أوقات الأذكار والصلاة محسوبة لمدينة \(app.city.n)").rawhText(12).foregroundStyle(app.skin.sub)
+            .surface(20, skin: app.skin)
+            // معاينة شكل الإشعار
+            if let d = Reminders.shortAdhkar("morning").first {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("هكذا يصلك الإشعار").rawhText(12, .semibold).foregroundStyle(app.skin.sub)
+                    HStack(alignment: .top, spacing: 10) {
+                        AppIconPreview(choice: AppIconChoice.current(), size: 38)
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack {
+                                Text("أذكار الصباح ☀️").rawhText(14, .bold).foregroundStyle(app.skin.text)
+                                Spacer()
+                                Text("الآن").rawhText(11).foregroundStyle(app.skin.sub)
+                            }
+                            Text(d.t).rawhText(13).foregroundStyle(app.skin.text).lineLimit(4)
+                        }
+                    }
+                    .padding(12)
+                    .surface(20, skin: app.skin)
+                }
+            }
+            Text("أوقات الأذكار والصلاة محسوبة لمدينة \(app.city.n). اضغط على الإشعار ليفتح لك القسم مباشرة.").rawhText(12).foregroundStyle(app.skin.sub).multilineTextAlignment(.center)
         }
         .sensoryFeedback(.selection, trigger: bell)
     }
@@ -2524,6 +2842,48 @@ struct SearchView: View {
     }
 }
 
+// اختيار أيقونة التطبيق
+struct AppIconPicker: View {
+    @EnvironmentObject var app: AppState
+    @State private var current: AppIconChoice = .emerald
+    @State private var tick = 0
+    @State private var failed = false
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                ForEach(AppIconChoice.allCases) { c in
+                    Button {
+                        guard c != current, UIApplication.shared.supportsAlternateIcons else { return }
+                        tick += 1
+                        UIApplication.shared.setAlternateIconName(c.assetName) { err in
+                            DispatchQueue.main.async {
+                                if err == nil { withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { current = c } } else { failed = true }
+                            }
+                        }
+                    } label: {
+                        VStack(spacing: 8) {
+                            AppIconPreview(choice: c, size: 66)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 66 * 0.2237 + 4, style: .continuous)
+                                        .strokeBorder(current == c ? app.skin.gold : Color.clear, lineWidth: 2.5)
+                                        .padding(-4)
+                                )
+                                .scaleEffect(current == c ? 1.04 : 1)
+                            Text(c.title).rawhText(12.5, .semibold).foregroundStyle(current == c ? app.skin.gold : app.skin.text)
+                        }
+                        .padding(.vertical, 6)
+                    }
+                    .buttonStyle(PressScale())
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+        .sensoryFeedback(.success, trigger: tick)
+        .onAppear { current = AppIconChoice.current() }
+        .alert("تعذّر تغيير الأيقونة", isPresented: $failed) { Button("حسنًا", role: .cancel) {} }
+    }
+}
+
 // الإعدادات
 struct SettingsView: View {
     @EnvironmentObject var app: AppState
@@ -2556,6 +2916,9 @@ struct SettingsView: View {
                                 .frame(maxWidth: .infinity)
                             }
                         }
+
+                        SectionTitle(title: "أيقونة التطبيق")
+                        AppIconPicker()
 
                         SectionTitle(title: "حجم النص")
                         Card {
@@ -2692,7 +3055,7 @@ struct IntroView: View {
             }
             .pickerStyle(.wheel)
             .frame(height: 120)
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(app.skin.card))
+            .surface(16, skin: app.skin)
             Text("المظهر").rawhText(14, .semibold).foregroundStyle(app.skin.gold)
             HStack(spacing: 10) {
                 ForEach(Skin.allCases) { k in
@@ -2720,6 +3083,7 @@ struct IntroView: View {
 struct RootView: View {
     @EnvironmentObject var app: AppState
     @Environment(\.scenePhase) private var phase
+    @ObservedObject private var router = NotificationRouter.shared
     @State private var tab = 0
     @State private var showIntro = false
 
@@ -2737,21 +3101,27 @@ struct RootView: View {
                 .tabItem { Label("المزيد", systemImage: "square.grid.2x2.fill") }.tag(4)
         }
         .tint(app.skin.gold)
+        .minimizingTabBar()
         .sensoryFeedback(.selection, trigger: tab)
         .preferredColorScheme(app.skin.scheme)
         .environment(\.layoutDirection, .rightToLeft)
         .environment(\.locale, Locale(identifier: "ar_SA"))
         .onAppear {
             styleBars()
-            if !app.s.introSeen { showIntro = true } else { Reminders.schedule(app.s) }
+            if !app.s.introSeen { showIntro = true } else { Reminders.requestAndSchedule(app.s) }
         }
         .onChange(of: app.s.skin) { _, _ in styleBars() }
         .onChange(of: phase) { _, p in if p == .active { app.now = Date(); app.rollDay() } }
         .fullScreenCover(isPresented: $showIntro) { IntroView().environmentObject(app) }
+        .sheet(item: Binding(get: { router.openCat.flatMap { DB.cat($0) } }, set: { if $0 == nil { router.openCat = nil } })) { c in
+            ReaderView(cat: c).environmentObject(app)
+        }
     }
 
     private func styleBars() {
         let k = app.skin
+        // iOS 26: الأشرطة زجاج سائل من النظام نفسه، لا نلوّنها
+        if #available(iOS 26.0, *) { return }
         let tab = UITabBarAppearance()
         tab.configureWithDefaultBackground()
         tab.backgroundColor = UIColor(k.bg2).withAlphaComponent(0.92)
@@ -2782,6 +3152,7 @@ struct RootView: View {
 @main
 struct RawhApp: App {
     @StateObject private var app = AppState()
+    init() { UNUserNotificationCenter.current().delegate = NotificationRouter.shared }
     var body: some Scene {
         WindowGroup {
             RootView()
