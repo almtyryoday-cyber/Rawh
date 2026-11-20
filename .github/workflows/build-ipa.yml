@@ -8,14 +8,19 @@ on:
 permissions:
   contents: write
 
+# a newer build cancels an older one, so only the latest version is published
+concurrency:
+  group: build-ipa
+  cancel-in-progress: true
+
 jobs:
   build:
-    runs-on: macos-15-intel
+    runs-on: macos-26-intel
     steps:
       - uses: actions/checkout@v4
 
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: brew install xcodegen librsvg
 
       - name: Create iOS project
         run: |
@@ -25,11 +30,42 @@ jobs:
           if [ -z "$SRC" ]; then echo "::error::Rawh.swift not found in the repo"; exit 1; fi
           echo "Using source: $SRC"
           cp "$SRC" ios/Rawh/Rawh.swift
-          # app icon: icon-1024.png if uploaded, otherwise made from icon-512.png
-          ICON=ios/Rawh/Assets.xcassets/AppIcon.appiconset/icon-1024.png
-          if [ -f icon-1024.png ]; then cp icon-1024.png "$ICON"; else sips -z 1024 1024 icon-512.png --out "$ICON"; fi
           echo '{"info":{"author":"xcode","version":1}}' > ios/Rawh/Assets.xcassets/Contents.json
-          echo '{"images":[{"filename":"icon-1024.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"author":"xcode","version":1}}' > ios/Rawh/Assets.xcassets/AppIcon.appiconset/Contents.json
+          # app icons: six-pointed star (rounded tips) with «رَوْح» in a soft frame (4 colours) + the mihrab logo
+          mkdir -p ios/icons
+          cat > ios/icons/star.svg <<'EOF'
+          <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+          <defs>
+          <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="BG1"/><stop offset="1" stop-color="BG2"/></linearGradient>
+          <radialGradient id="glow" cx=".5" cy=".46" r=".55"><stop offset="0" stop-color="GLOW" stop-opacity=".22"/><stop offset="1" stop-color="GLOW" stop-opacity="0"/></radialGradient>
+          </defs>
+          <rect width="1024" height="1024" fill="url(#bg)"/>
+          <rect width="1024" height="1024" fill="url(#glow)"/>
+          <rect x="132" y="132" width="760" height="760" rx="168" ry="168" fill="none" stroke="LINE" stroke-width="18" stroke-opacity=".9"/>
+          <rect x="164" y="164" width="696" height="696" rx="140" ry="140" fill="none" stroke="LINE" stroke-width="5" stroke-opacity=".45"/>
+          <path d="M549.4,259.6 Q606.6,348.2 711.9,353.4 Q823.0,332.4 749.3,418.2 Q701.1,512.0 749.3,605.8 Q823.0,691.6 711.9,670.6 Q606.6,675.8 549.4,764.4 Q512.0,871.1 474.6,764.4 Q417.4,675.8 312.1,670.6 Q201.0,691.6 274.7,605.8 Q322.9,512.0 274.7,418.2 Q201.0,332.4 312.1,353.4 Q417.4,348.2 474.6,259.6 Q512.0,152.9 549.4,259.6 Z" fill="none" stroke="LINE" stroke-width="24" stroke-linejoin="round"/>
+          <path d="M 475.7,507.0 C 474.3,507.0 471.5,507.2 467.4,507.6 C 463.3,507.9 459.9,508.4 457.3,508.8 C 449.3,510.0 442.2,511.6 436.1,513.8 C 430.0,516.0 424.4,518.9 419.1,522.4 C 412.2,527.2 406.8,532.3 403.0,537.8 C 397.4,545.8 394.6,554.4 394.6,563.5 C 394.6,570.4 396.2,576.7 399.4,582.5 C 402.7,588.3 407.3,593.1 413.4,597.1 C 418.8,600.5 425.4,603.2 433.4,604.9 C 441.5,606.7 450.5,607.6 460.6,607.6 C 465.9,607.6 472.1,607.3 479.1,606.8 C 486.2,606.2 491.9,605.5 496.2,604.8 L 500.8,604.0 C 503.4,603.5 505.3,603.3 506.4,603.3 C 507.6,603.3 508.3,603.7 508.3,604.6 C 508.3,605.7 506.6,607.2 503.1,609.1 C 499.7,611.0 495.1,613.0 489.4,615.1 C 482.0,617.9 475.4,619.9 469.7,620.9 C 464.0,622.0 457.6,622.6 450.7,622.6 C 430.6,622.6 414.8,618.1 403.2,609.3 C 391.6,600.5 385.8,588.4 385.8,573.1 C 385.8,557.5 390.3,543.8 399.3,531.7 C 403.5,526.0 408.1,521.1 413.1,517.0 C 418.2,512.9 424.0,509.2 430.5,506.1 L 430.5,505.4 C 429.5,505.2 427.8,504.9 425.4,504.6 C 424.9,504.5 423.5,504.3 421.1,504.0 C 415.5,503.1 411.3,502.7 408.6,502.7 C 405.5,502.7 403.1,503.0 401.2,503.7 C 399.4,504.4 397.6,505.5 395.9,507.3 C 394.7,508.4 394.0,509.0 393.6,509.3 C 393.3,509.5 392.8,509.7 392.3,509.7 C 391.4,509.7 390.9,509.1 390.9,508.0 C 390.9,506.9 391.5,505.2 392.8,502.8 C 394.1,500.5 395.6,498.3 397.4,496.3 C 402.3,490.6 407.6,487.7 413.3,487.7 C 416.2,487.7 420.9,488.4 427.7,489.7 C 435.4,491.4 441.8,492.5 446.9,493.0 C 451.9,493.4 459.3,493.7 468.8,493.7 L 478.9,493.6 L 482.0,493.6 Z M 521.1,422.4 C 521.1,420.2 521.5,417.8 522.3,415.4 C 523.1,412.9 524.1,410.8 525.4,408.9 C 528.4,404.8 531.7,402.8 535.4,402.8 C 538.4,402.8 541.2,404.4 543.7,407.5 C 546.1,410.7 547.4,414.2 547.4,418.1 C 547.4,422.7 545.6,426.7 542.0,430.0 C 538.7,433.1 535.3,434.7 531.6,434.7 C 528.6,434.7 526.1,433.5 524.1,431.2 C 522.1,428.9 521.1,426.0 521.1,422.4 Z M 525.2,419.2 C 525.2,420.9 526.0,422.4 527.6,423.7 C 529.1,425.0 531.0,425.6 533.2,425.6 C 535.4,425.6 537.4,425.0 539.0,423.9 C 540.9,422.6 541.9,421.3 541.9,419.9 C 541.9,418.7 541.2,417.3 539.9,415.5 C 538.0,413.1 535.8,411.9 533.4,411.9 C 530.8,411.9 528.7,412.9 527.1,415.0 C 525.8,416.4 525.2,417.8 525.2,419.2 Z M 554.6,521.3 C 554.2,521.3 553.4,522.0 551.9,523.4 C 550.7,524.8 549.5,525.7 548.5,526.2 C 547.6,526.7 546.3,526.9 544.9,526.9 C 540.8,526.9 537.6,525.7 535.2,523.2 C 532.9,520.7 531.8,517.3 531.8,513.0 C 531.8,509.6 532.3,506.0 533.5,502.2 C 534.7,498.3 536.3,494.7 538.4,491.4 C 541.7,485.8 545.2,483.0 548.8,483.0 C 552.7,483.0 556.1,486.0 558.9,491.8 C 561.8,497.6 563.3,504.3 563.3,512.0 C 563.3,519.2 561.8,526.7 558.9,534.6 C 556.1,542.5 552.1,549.7 547.1,556.2 C 543.0,561.5 538.1,565.7 532.5,568.9 C 526.8,572.1 521.3,573.6 515.9,573.6 C 511.2,573.6 505.9,571.8 500.1,568.1 C 497.6,566.5 495.2,564.8 493.1,562.9 C 490.9,561.1 489.8,559.8 489.8,559.3 C 489.8,559.0 490.0,558.6 490.3,558.4 C 490.7,558.1 491.1,557.9 491.5,557.9 C 492.0,557.9 492.8,558.1 493.7,558.4 L 498.0,559.7 C 501.6,560.8 504.2,561.5 505.8,561.9 C 507.3,562.2 509.1,562.3 511.2,562.3 C 516.1,562.3 521.0,561.1 525.9,558.6 C 531.7,555.7 536.9,552.1 541.6,547.9 C 545.8,544.1 549.3,540.0 552.0,535.5 C 554.7,531.0 556.1,527.3 556.1,524.2 C 556.1,523.4 555.9,522.7 555.6,522.1 C 555.4,521.5 555.0,521.3 554.6,521.3 Z M 555.6,510.2 C 555.3,507.2 554.5,504.6 553.3,502.5 C 551.2,499.0 548.7,497.2 545.8,497.2 C 544.4,497.2 543.1,498.0 541.9,499.6 C 540.8,501.1 540.3,502.9 540.3,505.0 C 540.3,509.3 543.3,511.4 549.3,511.4 C 551.3,511.4 553.4,511.0 555.6,510.2 Z M 638.1,425.6 C 638.1,428.3 637.4,430.8 635.8,433.0 C 634.9,434.4 633.4,435.7 631.5,436.9 C 629.6,438.2 626.1,440.0 621.0,442.4 L 615.1,445.3 L 610.0,447.7 L 606.2,449.5 L 602.5,451.4 C 601.2,452.1 600.0,452.8 599.1,453.3 L 596.3,454.9 L 594.1,456.1 L 592.7,457.0 C 592.4,457.2 592.0,457.3 591.8,457.5 L 591.3,457.5 C 591.2,457.3 591.1,457.2 591.1,457.1 C 591.1,456.9 591.2,456.6 591.3,456.3 C 591.4,456.1 591.7,455.6 592.1,454.8 C 593.2,452.3 594.2,450.5 594.9,449.3 C 595.6,448.0 596.4,447.1 597.1,446.6 C 598.9,445.4 606.1,441.7 618.7,435.7 L 625.2,432.7 C 631.5,429.7 635.8,427.4 638.1,425.6 Z M 625.3,488.3 C 626.7,489.2 628.2,490.6 629.7,492.4 C 631.2,494.2 632.4,496.2 633.4,498.3 C 635.0,501.5 636.4,505.5 637.4,510.3 C 638.5,515.0 639.0,519.4 639.0,523.4 C 639.0,530.0 637.5,536.6 634.5,543.3 C 631.6,550.0 627.5,555.9 622.2,561.0 C 618.5,564.7 614.3,567.7 609.8,570.1 C 605.3,572.5 601.5,573.7 598.3,573.7 C 595.0,573.7 590.0,572.0 583.3,568.7 C 575.8,564.9 572.1,562.5 572.1,561.6 C 572.1,561.3 572.2,561.1 572.5,560.8 C 572.8,560.5 573.1,560.4 573.5,560.4 C 574.0,560.4 574.9,560.6 576.1,561.0 L 579.3,561.8 L 583.2,562.7 C 585.7,563.4 588.1,563.7 590.4,563.7 C 596.3,563.7 602.8,561.1 610.0,556.0 C 617.2,550.8 623.6,544.1 629.3,535.7 C 631.0,533.2 632.2,531.3 632.8,530.3 C 633.4,529.2 633.7,528.3 633.7,527.7 C 633.7,526.7 633.3,525.1 632.3,522.7 C 631.4,520.4 630.2,517.9 628.7,515.2 C 626.0,510.2 622.5,505.7 618.2,501.9 Z M 377.0,318.4" fill="LINE" stroke="LINE" stroke-width="5" stroke-linejoin="round"/>
+          </svg>
+          EOF
+          mk() { sed -e "s/BG1/$2/g" -e "s/BG2/$3/g" -e "s/LINE/$4/g" -e "s/GLOW/$5/g" ios/icons/star.svg > "ios/icons/star-$1.svg"; }
+          mk emerald '#14473a' '#062019' '#E2C88E' '#D9BC7F'
+          mk night '#1a2220' '#050807' '#E2C88E' '#D9BC7F'
+          mk sand '#FBF5EA' '#EADFCB' '#1E5B49' '#9A7432'
+          mk gold '#F1D9A2' '#B98E45' '#0B2A22' '#0B2A22'
+          noalpha() { sips -s format jpeg -s formatOptions 100 "$1" --out /tmp/i.jpg >/dev/null && sips -s format png /tmp/i.jpg --out "$2" >/dev/null; }
+          seticon() {
+            mkdir -p "ios/Rawh/Assets.xcassets/$1.appiconset"
+            noalpha "$2" "ios/Rawh/Assets.xcassets/$1.appiconset/icon.png"
+            echo '{"images":[{"filename":"icon.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"author":"xcode","version":1}}' > "ios/Rawh/Assets.xcassets/$1.appiconset/Contents.json"
+          }
+          for n in emerald night sand gold; do rsvg-convert -w 1024 -h 1024 "ios/icons/star-$n.svg" -o "ios/icons/star-$n.png"; done
+          seticon AppIcon ios/icons/star-emerald.png
+          seticon AppIcon-Night ios/icons/star-night.png
+          seticon AppIcon-Sand ios/icons/star-sand.png
+          seticon AppIcon-Gold ios/icons/star-gold.png
+          if [ -f icon-1024.png ]; then cp icon-1024.png ios/icons/mihrab.png; else sips -z 1024 1024 icon-512.png --out ios/icons/mihrab.png >/dev/null; fi
+          seticon AppIcon-Mihrab ios/icons/mihrab.png
+          ls ios/Rawh/Assets.xcassets
           echo '{"colors":[{"idiom":"universal","color":{"color-space":"srgb","components":{"red":"0.039","green":"0.149","blue":"0.125","alpha":"1.000"}}}],"info":{"author":"xcode","version":1}}' > ios/Rawh/Assets.xcassets/LaunchBG.colorset/Contents.json
 
           cat > ios/project.yml <<'EOF'
@@ -48,8 +84,8 @@ jobs:
                 path: Rawh/Info.plist
                 properties:
                   CFBundleDisplayName: "رَوْح"
-                  CFBundleShortVersionString: "2.0"
-                  CFBundleVersion: "2"
+                  CFBundleShortVersionString: "2.2"
+                  CFBundleVersion: "7"
                   CFBundleDevelopmentRegion: ar
                   CFBundleLocalizations: [ar]
                   UILaunchScreen:
@@ -66,6 +102,7 @@ jobs:
                   TARGETED_DEVICE_FAMILY: "1"
                   SWIFT_VERSION: "5.0"
                   ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+                  ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
                   CODE_SIGNING_ALLOWED: NO
                   CODE_SIGNING_REQUIRED: NO
           EOF
