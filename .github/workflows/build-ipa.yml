@@ -24,12 +24,17 @@ jobs:
 
       - name: Create iOS project
         run: |
-          mkdir -p ios/Rawh/Assets.xcassets/AppIcon.appiconset ios/Rawh/Assets.xcassets/LaunchBG.colorset
+          mkdir -p ios/Shared ios/RawhWidgets ios/Rawh/Assets.xcassets/AppIcon.appiconset ios/Rawh/Assets.xcassets/LaunchBG.colorset
           # the SwiftUI app (whatever the file got named on upload)
           SRC=$( (grep -l "RAWH_JSON" ./*.swift || true) | head -n 1 )
           if [ -z "$SRC" ]; then echo "::error::Rawh.swift not found in the repo"; exit 1; fi
           echo "Using source: $SRC"
-          cp "$SRC" ios/Rawh/Rawh.swift
+          # one file, three parts: shared code / the app / the widgets
+          awk '/^\/\/ ===== SHARED =====/ {f="ios/Shared/Shared.swift"} /^\/\/ ===== APP =====/ {f="ios/Rawh/App.swift"} /^\/\/ ===== WIDGET =====/ {f="ios/RawhWidgets/Widgets.swift"} f {print > f}' "$SRC"
+          for f in ios/Shared/Shared.swift ios/Rawh/App.swift ios/RawhWidgets/Widgets.swift; do
+            if [ ! -s "$f" ]; then echo "::error::missing section in Rawh.swift: $f"; exit 1; fi
+            echo "$f: $(wc -l < "$f") lines"
+          done
           echo '{"info":{"author":"xcode","version":1}}' > ios/Rawh/Assets.xcassets/Contents.json
           # app icons: six-pointed star (rounded tips) with «رَوْح» in a soft frame (4 colours) + the mihrab logo
           mkdir -p ios/icons
@@ -80,12 +85,19 @@ jobs:
               platform: iOS
               sources:
                 - path: Rawh
+                - path: Shared
+              dependencies:
+                - target: RawhWidgets
               info:
                 path: Rawh/Info.plist
                 properties:
                   CFBundleDisplayName: "رَوْح"
-                  CFBundleShortVersionString: "2.2"
-                  CFBundleVersion: "7"
+                  CFBundleShortVersionString: "3.0"
+                  CFBundleVersion: "8"
+                  NSSupportsLiveActivities: true
+                  CFBundleURLTypes:
+                    - CFBundleURLName: com.rawh.adhkar
+                      CFBundleURLSchemes: [rawh]
                   CFBundleDevelopmentRegion: ar
                   CFBundleLocalizations: [ar]
                   UILaunchScreen:
@@ -103,6 +115,29 @@ jobs:
                   SWIFT_VERSION: "5.0"
                   ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
                   ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
+                  CODE_SIGNING_ALLOWED: NO
+                  CODE_SIGNING_REQUIRED: NO
+            RawhWidgets:
+              type: app-extension
+              platform: iOS
+              sources:
+                - path: RawhWidgets
+                - path: Shared
+              info:
+                path: RawhWidgets/Info.plist
+                properties:
+                  CFBundleDisplayName: "رَوْح"
+                  CFBundleShortVersionString: "3.0"
+                  CFBundleVersion: "8"
+                  NSExtension:
+                    NSExtensionPointIdentifier: com.apple.widgetkit-extension
+              settings:
+                base:
+                  PRODUCT_BUNDLE_IDENTIFIER: com.rawh.adhkar.widgets
+                  PRODUCT_NAME: RawhWidgets
+                  TARGETED_DEVICE_FAMILY: "1"
+                  SWIFT_VERSION: "5.0"
+                  SKIP_INSTALL: YES
                   CODE_SIGNING_ALLOWED: NO
                   CODE_SIGNING_REQUIRED: NO
           EOF
@@ -130,6 +165,7 @@ jobs:
           mkdir -p Payload
           cp -R build/Release-iphoneos/Rawh.app Payload/
           zip -qry ../Rawh.ipa Payload
+          ls Payload/Rawh.app/PlugIns || echo "::warning::widget extension not embedded"
           ls -lh ../Rawh.ipa
 
       - name: Publish to Releases
@@ -137,4 +173,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest -y --cleanup-tag || true
-          gh release create latest Rawh.ipa --title "رَوْح — آخر نسخة" --notes "تطبيق آيفون أصلي (SwiftUI). ثبّته عن طريق Sideloadly أو AltStore."
+          gh release create latest Rawh.ipa --title "رَوْح — آخر نسخة" --notes "رَوْح ٣.٠: ودجت، نشاط مباشر للصلاة، Siri. ثبّته عن طريق Sideloadly أو AltStore."
