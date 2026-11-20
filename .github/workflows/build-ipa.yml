@@ -106,6 +106,7 @@ jobs:
                   UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
                   UIBackgroundModes: [audio]
                   NSLocationWhenInUseUsageDescription: "يستخدم رَوْح موقعك لتحديد اتجاه القبلة بدقة."
+                  NSMicrophoneUsageDescription: "يستخدم رَوْح الميكروفون لتسجيل صوتك لعبارات التنبيه."
                   ITSAppUsesNonExemptEncryption: false
               settings:
                 base:
