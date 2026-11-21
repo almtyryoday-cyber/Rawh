@@ -719,6 +719,7 @@ import ActivityKit
 import AppIntents
 import Security
 import UniformTypeIdentifiers
+import CoreMotion
 
 // MARK: - الحالة المحفوظة
 
@@ -751,6 +752,7 @@ struct Saved: Codable {
     var dhikrFont: String = "system"        // خط نص الأذكار
     var autoSkin: Bool = true               // السماء الحيّة: تتبع وقت الصلاة في مدينتك
     var homeHidden: [String] = []           // أقسام الرئيسية المخفية
+    var skyMotion: Bool = true              // غيوم تتحرك وقمر حي
 
     init() {}
 
@@ -787,6 +789,7 @@ struct Saved: Codable {
         dhikrFont = (try? c.decode(String.self, forKey: .dhikrFont)) ?? d.dhikrFont
         autoSkin = (try? c.decode(Bool.self, forKey: .autoSkin)) ?? d.autoSkin
         homeHidden = (try? c.decode([String].self, forKey: .homeHidden)) ?? d.homeHidden
+        skyMotion = (try? c.decode(Bool.self, forKey: .skyMotion)) ?? d.skyMotion
         // أول تشغيل للتصميم الجديد: نبدأ بمظهر المخطوطة العاجي
         design = (try? c.decode(Int.self, forKey: .design)) ?? 0
         if design < 5 { skin = .night; autoSkin = true; design = 5 }
@@ -1202,13 +1205,123 @@ struct StarField: View {
     }
 }
 
-/// خلفية السماء: تدرّج الوقت، وضوء الشمس أو القمر، ونجوم في الليل والفجر
+/// طور القمر الفلكي (٠ محاق، ٠٫٥ بدر) من آخر محاق معروف
+enum MoonAge {
+    static let synodic = 29.530588853
+    static let reference = Date(timeIntervalSince1970: 947_182_440)   // محاق ٦ يناير ٢٠٠٠
+    static func phase(_ d: Date = Date()) -> Double {
+        let days = d.timeIntervalSince(reference) / 86_400
+        let p = days.truncatingRemainder(dividingBy: synodic) / synodic
+        return p < 0 ? p + 1 : p
+    }
+    static func name(_ d: Date = Date()) -> String {
+        let p = phase(d)
+        switch p {
+        case ..<0.03, 0.97...: return "محاق"
+        case ..<0.22: return "هلال متزايد"
+        case ..<0.28: return "تربيع أول"
+        case ..<0.47: return "أحدب متزايد"
+        case ..<0.53: return "بدر"
+        case ..<0.72: return "أحدب متناقص"
+        case ..<0.78: return "تربيع أخير"
+        default: return "هلال متناقص"
+        }
+    }
+}
+
+/// ميل الجوال: يحرّك طبقات الغيم بعمق مختلف
+final class TiltMotion: ObservableObject {
+    static let shared = TiltMotion()
+    private let manager = CMMotionManager()
+    private var users = 0
+    @Published var tilt: CGPoint = .zero
+    func start() {
+        users += 1
+        guard users == 1, manager.isDeviceMotionAvailable else { return }
+        manager.deviceMotionUpdateInterval = 1.0 / 30
+        manager.startDeviceMotionUpdates(to: .main) { [weak self] m, _ in
+            guard let self, let g = m?.gravity else { return }
+            let x = CGFloat(g.x), y = CGFloat(g.y + 0.6)
+            self.tilt = CGPoint(x: self.tilt.x * 0.9 + x * 0.1, y: self.tilt.y * 0.9 + y * 0.1)
+        }
+    }
+    func stop() {
+        users = max(0, users - 1)
+        if users == 0 { manager.stopDeviceMotionUpdates() }
+    }
+}
+
+/// إعدادات الغيم لكل وقت
+private extension Skin {
+    var cloudDensity: Double {
+        switch self { case .night: return 0.40; case .fajr: return 0.47; case .duha: return 0.43; case .asr: return 0.45; case .maghrib: return 0.52 }
+    }
+    var cloudLit: Color {
+        switch self { case .night: return Color(hex: 0x9AA4C9); case .fajr: return Color(hex: 0xFFD3C6); case .duha: return .white; case .asr: return Color(hex: 0xFFF0D2); case .maghrib: return Color(hex: 0xFFB487) }
+    }
+    var cloudShade: Color {
+        switch self { case .night: return Color(hex: 0x0A0F24); case .fajr: return Color(hex: 0x4E3F7A); case .duha: return Color(hex: 0x9DB5D2); case .asr: return Color(hex: 0xB7835A); case .maghrib: return Color(hex: 0x3E2453) }
+    }
+    var cloudAmount: Double { self == .night ? 0.62 : 0.92 }
+}
+
+/// الغيوم والقمر: يرسمهما معالج الرسوميات (Metal) إطارًا بإطار
+struct LivingSky: View {
+    var skin: Skin
+    var light: UnitPoint
+    var animated: Bool
+    var showMoon: Bool
+    @ObservedObject private var motion = TiltMotion.shared
+    @Environment(\.accessibilityReduceMotion) private var reduce
+    private static let start = Date()
+
+    /// يُرسم بنصف الدقة ثم يُكبَّر: الغيم ناعم بطبيعته، والجوال يرتاح
+    private let scale: CGFloat = 2
+
+    var body: some View {
+        GeometryReader { g in
+            let full = g.size
+            let size = CGSize(width: max(1, full.width / scale), height: max(1, full.height / scale))
+            TimelineView(.animation(minimumInterval: 1.0 / 24, paused: !animated || reduce)) { tl in
+                let t = Float(tl.date.timeIntervalSince(Self.start)) + 40
+                let moonR: CGFloat = 26 / scale
+                let moonP = CGPoint(x: size.width * 0.5, y: 96 / scale)
+                let sun = skin == .night ? moonP : CGPoint(x: light.x * size.width, y: light.y * size.height)
+                Rectangle()
+                    .fill(Color.black.opacity(0.01))
+                    .colorEffect(ShaderLibrary.rawhSky(
+                        .float2(size),
+                        .float(t),
+                        .float(skin.cloudDensity),
+                        .color(skin.cloudLit),
+                        .color(skin.cloudShade),
+                        .float2(sun),
+                        .float2(Float(motion.tilt.x), Float(motion.tilt.y)),
+                        .float3(Float(moonP.x), Float(moonP.y), Float(moonR)),
+                        .float(MoonAge.phase(tl.date)),
+                        .float(showMoon && skin == .night ? 1 : 0),
+                        .float(skin.cloudAmount)
+                    ))
+                    .frame(width: size.width, height: size.height)
+                    .drawingGroup()
+                    .scaleEffect(scale, anchor: .topLeading)
+                    .frame(width: full.width, height: full.height, alignment: .topLeading)
+            }
+        }
+        .environment(\.layoutDirection, .leftToRight)
+        .allowsHitTesting(false)
+        .onAppear { if animated { motion.start() } }
+        .onDisappear { if animated { motion.stop() } }
+    }
+}
+
+/// خلفية السماء: تدرّج الوقت، وضوء الشمس، ونجوم، وغيوم حقيقية، وقمر بطوره الفعلي
 struct SkyBackground: View {
     var skin: Skin
     var showMoon = true
+    var animated = true
     @State private var twinkle = false
     @State private var drift = false
-    @State private var flow = false
     @Environment(\.accessibilityReduceMotion) private var reduce
     var body: some View {
         ZStack {
@@ -1217,69 +1330,40 @@ struct SkyBackground: View {
                 .init(color: skin.mid, location: drift ? 0.5 : 0.6),
                 .init(color: skin.bg2, location: 1)
             ], startPoint: .top, endPoint: .bottom)
-            // سُحب ضوئية تسبح ببطء
-            GeometryReader { g in
-                let w = g.size.width, h = g.size.height
-                // بقع ضوء ناعمة الأطراف (تدرّج دائري بدل الضبابية: أخف على الجوال)
-                ZStack {
-                    Ellipse().fill(RadialGradient(colors: [skin.goldLight.opacity(skin == .night ? 0.10 : 0.30), .clear], center: .center, startRadius: 0, endRadius: w * 0.55))
-                        .frame(width: w * 1.2, height: h * 0.36)
-                        .offset(x: flow ? w * 0.28 : -w * 0.28, y: h * (skin == .maghrib || skin == .fajr ? 0.32 : -0.18))
-                    Ellipse().fill(RadialGradient(colors: [skin.mid.opacity(0.6), .clear], center: .center, startRadius: 0, endRadius: w * 0.5))
-                        .frame(width: w * 1.0, height: h * 0.3)
-                        .offset(x: flow ? -w * 0.32 : w * 0.25, y: h * 0.12)
-                    Ellipse().fill(RadialGradient(colors: [Color.white.opacity(skin == .night ? 0.05 : 0.12), .clear], center: .center, startRadius: 0, endRadius: w * 0.45))
-                        .frame(width: w * 0.9, height: h * 0.2)
-                        .offset(x: drift ? w * 0.2 : -w * 0.22, y: -h * 0.32)
-                }
-                .frame(width: w, height: h)
-            }
-            // الضوء: شمس عالية في الضحى، مائلة في العصر، على الأفق في الفجر والمغرب، وقمر في الليل
+            // الضوء: شمس عالية في الضحى، مائلة في العصر، على الأفق في الفجر والمغرب
             RadialGradient(colors: [skin.goldLight.opacity(glow), .clear], center: lightCenter, startRadius: 2, endRadius: drift ? 400 : 330)
             if skin == .night || skin == .fajr {
                 StarField(count: skin == .night ? 110 : 45)
                     .opacity(skin == .night ? (twinkle ? 1 : 0.75) : 0.45)
-                if skin == .night && showMoon {
-                    // هلال حقيقي (بدون قرص داكن فوقه)
-                    Image(systemName: "moon.fill")
-                        .font(.system(size: 30, weight: .regular))
-                        .foregroundStyle(Color(hex: 0xFFF3D2))
-                        .rotationEffect(.degrees(-20))
-                        .shadow(color: Color(hex: 0xFFF1C9).opacity(0.7), radius: 16)
-                        .offset(x: drift ? 6 : -6)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        .padding(.top, 58)
-                        .opacity(0.85)
-                }
             }
+            LivingSky(skin: skin, light: lightCenter, animated: animated, showMoon: showMoon)
         }
         .ignoresSafeArea()
         .animation(.easeInOut(duration: 1.4), value: skin)
         .onAppear {
-            guard !reduce else { return }
+            guard !reduce, animated else { return }
             withAnimation(.easeInOut(duration: 3.2).repeatForever(autoreverses: true)) { twinkle = true }
             withAnimation(.easeInOut(duration: 14).repeatForever(autoreverses: true)) { drift = true }
-            withAnimation(.easeInOut(duration: 22).repeatForever(autoreverses: true)) { flow = true }
         }
     }
     private var glow: Double {
-        switch skin { case .duha: return 0.55; case .asr: return 0.5; case .maghrib: return 0.65; case .fajr: return 0.45; case .night: return 0.12 }
+        switch skin { case .duha: return 0.55; case .asr: return 0.5; case .maghrib: return 0.65; case .fajr: return 0.45; case .night: return 0.10 }
     }
     private var lightCenter: UnitPoint {
-        let d: CGFloat = drift ? 0.08 : -0.08
+        let d: CGFloat = drift ? 0.06 : -0.06
         switch skin {
         case .duha: return UnitPoint(x: 0.82 + d, y: 0.06)
         case .asr: return UnitPoint(x: 0.12 - d, y: 0.22 + d * 0.5)
         case .maghrib: return UnitPoint(x: 0.5 + d, y: 1.0)
         case .fajr: return UnitPoint(x: 0.5 - d, y: 1.05)
-        case .night: return UnitPoint(x: 0.15 + d * 0.5, y: 0.1)
+        case .night: return UnitPoint(x: 0.5, y: 0.06)
         }
     }
 }
 
 struct ScreenBackground: View {
     @EnvironmentObject var app: AppState
-    var body: some View { SkyBackground(skin: app.skin) }
+    var body: some View { SkyBackground(skin: app.skin, animated: app.s.skyMotion) }
 }
 
 /// نقطة لمسة صغيرة
@@ -4475,7 +4559,7 @@ struct SkyPicker: View {
         } label: {
             VStack(spacing: 7) {
                 ZStack(alignment: .topTrailing) {
-                    SkyBackground(skin: shown, showMoon: false)
+                    SkyBackground(skin: shown, showMoon: false, animated: false)
                         .frame(maxWidth: .infinity)
                         .frame(height: 84)
                         .clipShape(shape)
@@ -5586,6 +5670,14 @@ struct CustomizeView: View {
                     Text("السماء الحيّة تتبدّل مع أوقات الصلاة في مدينتك: فجر، ضحى، عصر، مغرب، وليل بنجومه. أو ثبّتها على وقت تحبه.")
                         .rawhText(13).foregroundStyle(app.skin.sub)
                     SkyPicker()
+                    Divider().overlay(app.skin.line)
+                    Toggle(isOn: Binding(get: { app.s.skyMotion }, set: { app.s.skyMotion = $0 })) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("سماء حيّة الحركة").rawhText(15, .semibold).foregroundStyle(app.skin.text)
+                            Text("غيوم تتشكّل مع الريح وتميل مع جوالك، وقمر بطوره الحقيقي. أطفئها لتوفير البطارية.").rawhText(12).foregroundStyle(app.skin.sub)
+                        }
+                    }
+                    .tint(app.skin.gold)
                 }
             }
 
@@ -7005,4 +7097,111 @@ struct RawhWidgets: WidgetBundle {
         DhikrWidget()
         PrayerLiveActivity()
     }
+}
+
+// ===== METAL =====
+// سماء رَوْح: غيوم حجمية بإضاءة من الشمس أو القمر، وقمر حقيقي بكل أطواره
+#include <metal_stdlib>
+#include <SwiftUI/SwiftUI_Metal.h>
+using namespace metal;
+
+static float rh_hash(float2 p) {
+    p = fract(p * float2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+
+static float rh_noise(float2 p) {
+    float2 i = floor(p), f = fract(p);
+    float a = rh_hash(i), b = rh_hash(i + float2(1, 0));
+    float c = rh_hash(i + float2(0, 1)), d = rh_hash(i + float2(1, 1));
+    float2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+static float rh_fbm(float2 p) {
+    float v = 0.0, a = 0.5;
+    const float2x2 m = float2x2(1.6, 1.2, -1.2, 1.6);
+    for (int i = 0; i < 4; i++) { v += a * rh_noise(p); p = m * p; a *= 0.5; }
+    return v;
+}
+
+/// size: حجم الشاشة، time: الزمن، density: كثافة الغيم، lit/shade: لون الجهة المضيئة والظل،
+/// sun: موضع مصدر الضوء، tilt: ميل الجوال، moon: (x, y, نصف القطر)، phase: طور القمر ٠…١، moonOn، amount: شفافية الغيم
+[[ stitchable ]] half4 rawhSky(float2 pos, half4 color, float2 size, float time, float density,
+                              half4 lit, half4 shade, float2 sun, float2 tilt,
+                              float3 moon, float phase, float moonOn, float amount) {
+    float3 col = float3(0.0);
+    float alpha = 0.0;
+
+    // ---- القمر (خلف الغيوم) ----
+    if (moonOn > 0.5) {
+        float2 d = (pos - moon.xy) / moon.z;
+        float r = length(d);
+        float ang = phase * 6.2831853;
+        float illum = 0.5 - 0.5 * cos(ang);                    // نسبة الجزء المضيء
+        // هالة ضوء حول القمر بقدر إضاءته
+        float halo = exp(-max(r - 1.0, 0.0) * 2.4) * (0.10 + 0.32 * illum) * step(1.0, r);
+        col += float3(1.0, 0.95, 0.82) * halo;
+        alpha += halo;
+        if (r < 1.0) {
+            float z = sqrt(max(0.0, 1.0 - r * r));
+            float3 N = float3(d.x, -d.y, z);
+            float3 L = float3(sin(ang), 0.0, -cos(ang));       // ٠: محاق، ٠٫٢٥: تربيع أول (يمين مضيء)، ٠٫٥: بدر
+            float lamb = dot(N, L);
+            float day = smoothstep(-0.03, 0.08, lamb);
+            // سطح القمر: بحار داكنة، وفوهات، وإظلام الحافة
+            float2 sp = d * 2.3 + float2(3.1, 1.7);
+            float maria = smoothstep(0.46, 0.68, rh_fbm(sp * 0.9));
+            float crater = rh_fbm(sp * 4.5);
+            float albedo = 0.95 - maria * 0.30 - (crater - 0.5) * 0.16;
+            float limb = mix(0.7, 1.0, pow(z, 0.5));
+            float bright = albedo * limb * (0.35 + 0.65 * max(lamb, 0.0)) * day;
+            float edge = 1.0 - smoothstep(0.96, 1.0, r);
+            float a = edge * (day + 0.035 * (1.0 - day));      // الجزء المظلم شبه شفاف (ضوء الأرض الخافت)
+            float3 mc = float3(1.0, 0.97, 0.88) * bright + float3(0.55, 0.6, 0.75) * 0.05 * (1.0 - day);
+            col = mc * a + col * (1.0 - a);
+            alpha = a + alpha * (1.0 - a);
+        }
+    }
+
+    // ---- الغيوم: طبقتان بسرعتين (عمق)، تتشكّل وتتبدّل مع الريح ----
+    float2 uv = pos / size.y;
+    float2 sunUV = sun / size.y;
+    float yv = pos.y / size.y;
+    float band = smoothstep(0.0, 0.12, yv) * (1.0 - smoothstep(0.58, 0.92, yv));
+    float gust = 0.012 + 0.005 * sin(time * 0.05) + 0.003 * sin(time * 0.13 + 1.3);
+    float th = 1.0 - density;
+
+    // الطبقة البعيدة: أصغر وأبطأ وأبهت
+    float2 p1 = uv * 2.6 + float2(time * gust * 0.55, 0.0) + tilt * 0.015;
+    float q1 = rh_fbm(p1 + float2(0.0, time * 0.004));
+    float n1 = rh_fbm(p1 + 1.5 * float2(q1, q1 * 0.6) + float2(time * 0.005, 0.0));
+    float c1 = smoothstep(th, th + 0.30, n1) * band * 0.55 * amount;
+    float3 far = mix(float3(shade.rgb), float3(lit.rgb), 0.72);
+
+    // الطبقة القريبة: كتل كبيرة بإضاءة وظل
+    float2 p2 = uv * 1.35 + float2(time * gust, 0.0) + tilt * 0.045 + float2(13.7, 4.1);
+    float2 q2 = float2(rh_fbm(p2), rh_fbm(p2 + float2(5.2, 1.3)));
+    float2 w2 = p2 + 1.7 * q2 + float2(time * 0.007, time * 0.002);
+    float n2 = rh_fbm(w2);
+    float c2 = smoothstep(th + 0.04, th + 0.30, n2) * band * amount;
+    // ظل ذاتي: نقيس الكثافة باتجاه الضوء
+    float2 dir = normalize(sunUV - uv + float2(1e-4));
+    float n2s = rh_fbm(w2 + dir * 0.09);
+    float light = clamp(0.58 + (n2 - n2s) * 6.0, 0.0, 1.0);
+    float sdist = distance(uv, sunUV);
+    float3 near = mix(float3(shade.rgb), float3(lit.rgb), light);
+    // حافة فضية قرب مصدر الضوء
+    float thin = clamp(1.0 - c2 * 1.6, 0.0, 1.0);
+    near += float3(lit.rgb) * thin * exp(-sdist * 2.2) * 0.55;
+    // انتشار الضوء داخل الغيمة
+    near += float3(lit.rgb) * exp(-sdist * 4.0) * 0.25;
+
+    col = far * c1 + col * (1.0 - c1);
+    alpha = c1 + alpha * (1.0 - c1);
+    col = near * c2 + col * (1.0 - c2);
+    alpha = c2 + alpha * (1.0 - c2);
+
+    return half4(half3(col), half(alpha));
 }
