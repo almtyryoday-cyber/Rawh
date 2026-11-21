@@ -2513,21 +2513,8 @@ struct SurahView: View {
     @State private var selected: Ayah? = nil
     @AppStorage("rawh.quran.mushaf") private var mushaf = true
 
-    /// صفحة من المصحف: آياتها مع ترتيبها في السورة
-    private struct MushafPage: Identifiable {
-        let id: Int
-        let juz: Int?
-        var items: [(index: Int, ayah: Ayah)]
-    }
-    private var pages: [MushafPage] {
-        var out: [MushafPage] = []
-        for (i, a) in ayahs.enumerated() {
-            let pg = a.page ?? 0
-            if out.last?.id == pg { out[out.count - 1].items.append((index: i, ayah: a)) }
-            else { out.append(MushafPage(id: pg, juz: a.juz, items: [(index: i, ayah: a)])) }
-        }
-        return out
-    }
+    @State private var reading = false
+    private var pages: [MushafPage] { MushafPage.build(ayahs) }
 
     /// نص الصفحة متصلًا، وبين الآيات أرقامها ﴿١﴾ (الرقم يُضغط)
     private func pageText(_ p: MushafPage) -> Text {
@@ -2545,6 +2532,12 @@ struct SurahView: View {
             s += AttributedString(" ")
         }
         return Text(s)
+    }
+
+    /// يبدأ وضع القراءة من علامتك إن كانت في هذه السورة
+    private var startPage: Int {
+        guard app.s.lastSurah == info.number, let a = ayahs.first(where: { $0.numberInSurah == app.s.lastAyah }) else { return 0 }
+        return pages.firstIndex { $0.id == (a.page ?? 0) } ?? 0
     }
 
     private func scrollId(_ i: Int) -> AnyHashable {
@@ -2587,9 +2580,12 @@ struct SurahView: View {
     static let bismillah = "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ"
     private var playId: String { "surah:\(info.number)" }
 
-    private func display(_ a: Ayah) -> String {
-        if info.number != 1 && a.numberInSurah == 1 && a.text.hasPrefix(Self.bismillah) {
-            return String(a.text.dropFirst(Self.bismillah.count)).trimmingCharacters(in: .whitespaces)
+    private func display(_ a: Ayah) -> String { Self.clean(a, surah: info.number) }
+
+    /// نص الآية بدون البسملة في أول السور (لأنها تُكتب فوق السورة)
+    static func clean(_ a: Ayah, surah: Int) -> String {
+        if surah != 1 && a.numberInSurah == 1 && a.text.hasPrefix(bismillah) {
+            return String(a.text.dropFirst(bismillah.count)).trimmingCharacters(in: .whitespaces)
         }
         return a.text
     }
@@ -2622,6 +2618,17 @@ struct SurahView: View {
                         }
                         .frame(height: 96)
                         .surface(20, skin: app.skin, stroke: app.skin.gold.opacity(0.35))
+
+                        if !ayahs.isEmpty {
+                            Button { reading = true } label: {
+                                Label("وضع القراءة", systemImage: "book.fill")
+                                    .rawhText(14, .bold)
+                                    .foregroundStyle(app.skin.onGold)
+                                    .padding(.horizontal, 20).padding(.vertical, 10)
+                                    .goldPill(app.skin)
+                            }
+                            .buttonStyle(PressScale())
+                        }
 
                         if info.number != 1 && info.number != 9 {
                             Text(Self.bismillah).rawhText(24 * app.s.textScale, .medium).foregroundStyle(app.skin.gold)
@@ -2727,6 +2734,9 @@ struct SurahView: View {
                 Button("إلغاء", role: .cancel) { selected = nil }
             }
         }
+        .fullScreenCover(isPresented: $reading) {
+            QuranReadingView(info: info, ayahs: ayahs, start: startPage).environmentObject(app)
+        }
         .task { await load() }
         .onDisappear { if audio.playingId == playId { /* تستمر التلاوة في الخلفية حتى توقفها */ } }
     }
@@ -2734,6 +2744,157 @@ struct SurahView: View {
     @MainActor private func load() async {
         failed = false
         do { ayahs = try await QuranStore.shared.surah(info.number) } catch { failed = true }
+    }
+}
+
+// MARK: - صفحات المصحف
+
+struct MushafPage: Identifiable {
+    let id: Int
+    let juz: Int?
+    var items: [(index: Int, ayah: Ayah)]
+
+    static func build(_ ayahs: [Ayah]) -> [MushafPage] {
+        var out: [MushafPage] = []
+        for (i, a) in ayahs.enumerated() {
+            let pg = a.page ?? 0
+            if out.last?.id == pg { out[out.count - 1].items.append((index: i, ayah: a)) }
+            else { out.append(MushafPage(id: pg, juz: a.juz, items: [(index: i, ayah: a)])) }
+        }
+        return out
+    }
+}
+
+// MARK: - وضع القراءة: صفحة صفحة بملء الشاشة مثل المصحف الورقي
+
+struct QuranReadingView: View {
+    @EnvironmentObject var app: AppState
+    @Environment(\.dismiss) private var dismiss
+    let info: SurahInfo
+    let ayahs: [Ayah]
+    @State private var index: Int
+    @State private var chrome = true
+    @AppStorage("rawh.quran.paper") private var paper = true
+
+    init(info: SurahInfo, ayahs: [Ayah], start: Int) {
+        self.info = info
+        self.ayahs = ayahs
+        _index = State(initialValue: start)
+    }
+
+    private var bg: Color { paper ? Color(hex: 0xFBF3DF) : app.skin.bg }
+    private var ink: Color { paper ? Color(hex: 0x1E1A12) : app.skin.text }
+    private var accent: Color { paper ? Color(hex: 0x9A7432) : app.skin.gold }
+
+    var body: some View {
+        let pages = MushafPage.build(ayahs)
+        ZStack {
+            bg.ignoresSafeArea()
+            if paper {
+                RadialGradient(colors: [Color.white.opacity(0.55), .clear], center: .center, startRadius: 20, endRadius: 520).ignoresSafeArea()
+            }
+            TabView(selection: $index) {
+                ForEach(Array(pages.enumerated()), id: \.element.id) { i, p in
+                    ScrollView(showsIndicators: false) {
+                        page(p, first: i == 0)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 74)
+                            .padding(.bottom, 70)
+                    }
+                    .tag(i)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .ignoresSafeArea()
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.25)) { chrome.toggle() } }
+
+            if chrome {
+                VStack {
+                    HStack {
+                        Button { dismiss() } label: {
+                            Image(systemName: "xmark").font(.system(size: 15, weight: .bold)).foregroundStyle(accent)
+                                .frame(width: 42, height: 42).background(Circle().fill(accent.opacity(0.12)))
+                        }
+                        Spacer()
+                        VStack(spacing: 2) {
+                            Text(info.name).rawhText(16, .bold).foregroundStyle(ink)
+                            if index < pages.count, let j = pages[index].juz {
+                                Text("الجزء \(AR.n(j))").rawhText(11.5).foregroundStyle(accent)
+                            }
+                        }
+                        Spacer()
+                        Button { withAnimation { paper.toggle() } } label: {
+                            Image(systemName: paper ? "moon.fill" : "sun.max.fill").font(.system(size: 16, weight: .semibold)).foregroundStyle(accent)
+                                .frame(width: 42, height: 42).background(Circle().fill(accent.opacity(0.12)))
+                                .contentTransition(.symbolEffect(.replace))
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 10)
+                    .background(bg.opacity(0.94).ignoresSafeArea(edges: .top))
+                    Spacer()
+                    HStack(spacing: 10) {
+                        Rectangle().fill(accent.opacity(0.4)).frame(height: 0.7)
+                        Text(pages.indices.contains(index) && pages[index].id > 0 ? "صفحة \(AR.n(pages[index].id))" : "\(AR.n(index + 1)) / \(AR.n(pages.count))")
+                            .rawhText(12.5, .semibold).foregroundStyle(accent).fixedSize()
+                        Rectangle().fill(accent.opacity(0.4)).frame(height: 0.7)
+                    }
+                    .padding(.horizontal, 30).padding(.vertical, 12)
+                    .background(bg.opacity(0.94).ignoresSafeArea(edges: .bottom))
+                }
+                .transition(.opacity)
+            }
+        }
+        .statusBarHidden(!chrome)
+        .preferredColorScheme(paper ? .light : app.skin.scheme)
+        .sensoryFeedback(.selection, trigger: index)
+        .onAppear { UIApplication.shared.isIdleTimerDisabled = true; save(index, pages) }
+        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+        .onChange(of: index) { _, i in save(i, pages) }
+    }
+
+    /// تُحفظ علامة القراءة تلقائيًا عند كل صفحة
+    private func save(_ i: Int, _ pages: [MushafPage]) {
+        guard pages.indices.contains(i), let a = pages[i].items.first?.ayah else { return }
+        app.s.lastSurah = info.number
+        app.s.lastAyah = a.numberInSurah
+    }
+
+    private func page(_ p: MushafPage, first: Bool) -> some View {
+        var s = AttributedString()
+        for item in p.items {
+            s += AttributedString(SurahView.clean(item.ayah, surah: info.number) + " ")
+            var mark = AttributedString("\u{FD3F}\(AR.n(item.ayah.numberInSurah))\u{FD3E}")
+            mark[AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.self] = accent
+            s += mark
+            s += AttributedString(" ")
+        }
+        return VStack(spacing: 18) {
+            if first {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(accent.opacity(0.7), lineWidth: 1.2)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(accent.opacity(0.35), lineWidth: 0.8).padding(5)
+                    HStack {
+                        EightStar().stroke(accent, lineWidth: 1).frame(width: 22, height: 22)
+                        Spacer()
+                        Text(info.name).rawhText(22, .bold).foregroundStyle(ink)
+                        Spacer()
+                        EightStar().stroke(accent, lineWidth: 1).frame(width: 22, height: 22)
+                    }
+                    .padding(.horizontal, 18)
+                }
+                .frame(height: 64)
+                if info.number != 1 && info.number != 9 {
+                    Text(SurahView.bismillah).rawhText(23 * app.s.textScale, .medium).foregroundStyle(ink)
+                }
+            }
+            Text(s)
+                .rawhText(25 * app.s.textScale, .regular)
+                .lineSpacing(17 * app.s.textScale)
+                .foregroundStyle(ink)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
@@ -4355,9 +4516,9 @@ struct ZakatView: View {
         })
         return Double(t) ?? 0
     }
-    private func money(_ v: Double) -> String {
+    static func amount(_ v: Double) -> String {
         let f = NumberFormatter(); f.locale = AR.locale; f.numberStyle = .decimal; f.maximumFractionDigits = 2
-        return (f.string(from: NSNumber(value: v)) ?? "\(v)") + " ريال"
+        return f.string(from: NSNumber(value: v)) ?? "\(v)"
     }
 
     var body: some View {
@@ -4374,13 +4535,12 @@ struct ZakatView: View {
             Card(highlight: true) {
                 VStack(spacing: 8) {
                     Text("الزكاة الواجبة").rawhText(13).foregroundStyle(app.skin.sub)
-                    Text(money(due)).rawhText(32, .bold).foregroundStyle(app.skin.gold)
-                        .contentTransition(.numericText()).minimumScaleFactor(0.6).lineLimit(1)
+                    RiyalText(value: due, size: 32, weight: .bold, color: app.skin.gold)
                     Label(note, systemImage: noteIcon).rawhText(13, .semibold).foregroundStyle(noteColor)
                     Divider().overlay(app.skin.line)
                     HStack {
-                        stat("مجموع المال", money(max(0, total)))
-                        stat("النصاب", nisab > 0 ? money(nisab) : "—")
+                        stat("مجموع المال", max(0, total))
+                        stat("النصاب", nisab > 0 ? nisab : nil)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -4388,19 +4548,19 @@ struct ZakatView: View {
 
             SectionTitle(title: "أموالك")
             VStack(spacing: 0) {
-                field("banknote.fill", "النقد والأرصدة", "ريال", $cash)
+                field("banknote.fill", "النقد والأرصدة", "\u{20C1}", $cash)
                 sep; field("circle.hexagongrid.fill", "الذهب (عيار ٢٤)", "جرام", $gold)
                 sep; field("circle.grid.cross.fill", "الفضة", "جرام", $silver)
-                sep; field("shippingbox.fill", "عروض التجارة", "ريال", $trade)
-                sep; field("arrow.down.left.circle.fill", "ديون لك مرجوّة السداد", "ريال", $owed)
-                sep; field("arrow.up.right.circle.fill", "ديون عليك حالّة", "ريال", $debts)
+                sep; field("shippingbox.fill", "عروض التجارة", "\u{20C1}", $trade)
+                sep; field("arrow.down.left.circle.fill", "ديون لك مرجوّة السداد", "\u{20C1}", $owed)
+                sep; field("arrow.up.right.circle.fill", "ديون عليك حالّة", "\u{20C1}", $debts)
             }
             .surface(20, skin: app.skin)
 
             SectionTitle(title: "الأسعار والنصاب")
             VStack(spacing: 0) {
-                field("scalemass.fill", "سعر جرام الذهب اليوم", "ريال", $goldPrice)
-                sep; field("scalemass", "سعر جرام الفضة اليوم", "ريال", $silverPrice)
+                field("scalemass.fill", "سعر جرام الذهب اليوم", "\u{20C1}", $goldPrice)
+                sep; field("scalemass", "سعر جرام الفضة اليوم", "\u{20C1}", $silverPrice)
             }
             .surface(20, skin: app.skin)
             Picker("النصاب", selection: $basis) {
@@ -4421,10 +4581,11 @@ struct ZakatView: View {
 
     private var sep: some View { Rectangle().fill(app.skin.line).frame(height: 0.6).padding(.leading, 52) }
 
-    private func stat(_ t: String, _ v: String) -> some View {
+    private func stat(_ t: String, _ v: Double?) -> some View {
         VStack(spacing: 3) {
             Text(t).rawhText(11.5).foregroundStyle(app.skin.sub)
-            Text(v).rawhText(14, .bold).foregroundStyle(app.skin.text).lineLimit(1).minimumScaleFactor(0.6)
+            if let v { RiyalText(value: v, size: 14, weight: .bold, color: app.skin.text) }
+            else { Text("—").rawhText(14, .bold).foregroundStyle(app.skin.text) }
         }
         .frame(maxWidth: .infinity)
     }
@@ -4441,9 +4602,27 @@ struct ZakatView: View {
                 .foregroundStyle(app.skin.text)
                 .frame(width: 96)
                 .focused($focus)
-            Text(unit).rawhText(12).foregroundStyle(app.skin.sub).frame(width: 34, alignment: .leading)
+            Text(unit).rawhText(unit.count == 1 ? 16 : 12, unit.count == 1 ? .semibold : .regular).foregroundStyle(app.skin.sub).frame(width: 34, alignment: .leading)
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
+    }
+}
+
+/// مبلغ بعلامة الريال السعودي الجديدة ⃁ (يسار الرقم)
+struct RiyalText: View {
+    var value: Double
+    var size: CGFloat
+    var weight: Font.Weight = .bold
+    var color: Color
+    var body: some View {
+        HStack(spacing: size * 0.22) {
+            Text("\u{20C1}").font(.system(size: size * 0.92, weight: weight))
+            Text(ZakatView.amount(value)).font(.system(size: size, weight: weight)).contentTransition(.numericText())
+        }
+        .foregroundStyle(color)
+        .lineLimit(1)
+        .minimumScaleFactor(0.6)
+        .environment(\.layoutDirection, .leftToRight)
     }
 }
 
