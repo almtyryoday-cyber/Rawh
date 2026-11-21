@@ -152,56 +152,61 @@ extension Color {
 
 // MARK: - المظهر
 
+/// السماء الحيّة: لكل وقت من أوقات اليوم سماء وألوان
 enum Skin: String, CaseIterable, Identifiable, Codable {
-    case sand, night, emerald            // عاجي (المخطوطة)، حبر، زمرّد
+    case fajr, duha, asr, maghrib, night
     var id: String { rawValue }
     var name: String {
-        switch self { case .sand: return "عاجي"; case .night: return "حبر"; case .emerald: return "زمرّد" }
+        switch self { case .fajr: return "الفجر"; case .duha: return "الضحى"; case .asr: return "العصر"; case .maghrib: return "المغرب"; case .night: return "الليل" }
     }
-    var scheme: ColorScheme { self == .sand ? .light : .dark }
-    var isLight: Bool { self == .sand }
-    /// الورق
+    var symbol: String {
+        switch self { case .fajr: return "sunrise.fill"; case .duha: return "sun.max.fill"; case .asr: return "sun.haze.fill"; case .maghrib: return "sunset.fill"; case .night: return "moon.stars.fill" }
+    }
+    var scheme: ColorScheme { .dark }
+    var isLight: Bool { false }
+    /// السماء من الأعلى إلى الأفق
     var bg: Color {
-        switch self { case .sand: return Color(hex: 0xF6EEDC); case .night: return Color(hex: 0x10142A); case .emerald: return Color(hex: 0x0B2A22) }
+        switch self { case .fajr: return Color(hex: 0x1C1E4A); case .duha: return Color(hex: 0x1E5FB4); case .asr: return Color(hex: 0x9C5524); case .maghrib: return Color(hex: 0x241A4A); case .night: return Color(hex: 0x04071A) }
+    }
+    var mid: Color {
+        switch self { case .fajr: return Color(hex: 0x56478A); case .duha: return Color(hex: 0x3F86D2); case .asr: return Color(hex: 0xD48A3E); case .maghrib: return Color(hex: 0x7A3A6C); case .night: return Color(hex: 0x0D1434) }
     }
     var bg2: Color {
-        switch self { case .sand: return Color(hex: 0xEADDBF); case .night: return Color(hex: 0x070A18); case .emerald: return Color(hex: 0x05170F) }
+        switch self { case .fajr: return Color(hex: 0xE39C9B); case .duha: return Color(hex: 0x9DD0F7); case .asr: return Color(hex: 0xF1C27C); case .maghrib: return Color(hex: 0xEE8248); case .night: return Color(hex: 0x1B2452) }
     }
+    /// زجاج البطاقات مصبوغ بلون السماء
     var card: Color {
-        switch self { case .sand: return Color(hex: 0xFCF7EC); case .night: return Color(hex: 0x181D3A); case .emerald: return Color(hex: 0x11372D) }
+        switch self { case .fajr: return Color(hex: 0x141640).opacity(0.38); case .duha: return Color(hex: 0x0E3F82).opacity(0.36); case .asr: return Color(hex: 0x5E2F0E).opacity(0.34); case .maghrib: return Color(hex: 0x1A1038).opacity(0.40); case .night: return Color(hex: 0x1A2350).opacity(0.55) }
     }
-    var card2: Color {
-        switch self { case .sand: return Color(hex: 0xF1E5CB); case .night: return Color(hex: 0x21274C); case .emerald: return Color(hex: 0x174337) }
-    }
-    /// الحبر
-    var text: Color {
-        switch self { case .sand: return Color(hex: 0x1B1A2E); case .night: return Color(hex: 0xEFE6D2); case .emerald: return Color(hex: 0xF2E9D4) }
-    }
-    var sub: Color { text.opacity(isLight ? 0.6 : 0.62) }
-    /// ذهب التذهيب
+    var card2: Color { Color.white.opacity(0.16) }
+    var text: Color { .white }
+    var sub: Color { Color.white.opacity(0.72) }
+    /// لون اللمسة (ضوء الوقت)
     var gold: Color {
-        switch self { case .sand: return Color(hex: 0xA9813A); case .night: return Color(hex: 0xD8B46A); case .emerald: return Color(hex: 0xD9BC7F) }
+        switch self { case .fajr: return Color(hex: 0xFFC7A6); case .duha: return Color(hex: 0xFFE08A); case .asr: return Color(hex: 0xFFE9B8); case .maghrib: return Color(hex: 0xFFB27A); case .night: return Color(hex: 0xF3D38C) }
     }
     var goldLight: Color {
-        switch self { case .sand: return Color(hex: 0xD2AE62); case .night: return Color(hex: 0xF0D28E); case .emerald: return Color(hex: 0xF3DDA6) }
+        switch self { case .fajr: return Color(hex: 0xFFE2D0); case .duha: return Color(hex: 0xFFF1C2); case .asr: return Color(hex: 0xFFF6DE); case .maghrib: return Color(hex: 0xFFD6B5); case .night: return Color(hex: 0xFBE7B8) }
     }
-    /// اللازورد
-    var lapis: Color {
-        switch self { case .sand: return Color(hex: 0x1F3B73); case .night: return Color(hex: 0x2C4A8E); case .emerald: return Color(hex: 0x1D5A4A) }
+    /// الأيقونات والعناصر الثانوية
+    var lapis: Color { .white }
+    var lapisLight: Color { Color.white.opacity(0.85) }
+    var rubric: Color { Color.white.opacity(0.95) }
+    var green: Color { Color(hex: 0x8DF0C2) }
+    var line: Color { Color.white.opacity(0.18) }
+    var onGold: Color { Color(hex: 0x1B1633) }
+    var shadow: Color { Color.black.opacity(0.18) }
+
+    /// وقت السماء الآن حسب مواقيت المدينة
+    static func at(_ date: Date, city: City) -> Skin {
+        let t = PrayerTimes.compute(for: date, city: city)
+        let h = date.timeIntervalSince(AR.gregorian.startOfDay(for: date)) / 3600
+        if h < t.fajr || h >= t.isha { return .night }
+        if h < t.sunrise + 0.5 { return .fajr }
+        if h < t.asr { return .duha }
+        if h < t.maghrib - 0.4 { return .asr }
+        return .maghrib
     }
-    var lapisLight: Color {
-        switch self { case .sand: return Color(hex: 0x34589E); case .night: return Color(hex: 0x8FA9E3); case .emerald: return Color(hex: 0x8FCDB6) }
-    }
-    /// حمرة العناوين (مثل عناوين المخطوطات)
-    var rubric: Color {
-        switch self { case .sand: return Color(hex: 0x9E3B2C); case .night: return Color(hex: 0xE39A84); case .emerald: return Color(hex: 0xE8A486) }
-    }
-    var green: Color {
-        switch self { case .sand: return Color(hex: 0x2F6B4F); case .night: return Color(hex: 0x74C9A0); case .emerald: return Color(hex: 0x7FD1A8) }
-    }
-    var line: Color { gold.opacity(isLight ? 0.38 : 0.28) }
-    var onGold: Color { isLight ? Color(hex: 0xFFF9EC) : Color(hex: 0x14102A) }
-    var shadow: Color { isLight ? Color(hex: 0x6B4A16).opacity(0.14) : Color.black.opacity(0.35) }
 }
 
 
@@ -706,7 +711,7 @@ import UniformTypeIdentifiers
 // MARK: - الحالة المحفوظة
 
 struct Saved: Codable {
-    var skin: Skin = .sand
+    var skin: Skin = .night
     var cityId: String = "riyadh"
     var textScale: Double = 1.0
     var favorites: [String] = []
@@ -729,10 +734,10 @@ struct Saved: Codable {
     var khatmaStart: String = ""            // يوم بداية الختمة (فاضي = ما بدأت)
     var khatmaPage: Int = 0                 // آخر صفحة قرأتها (من ٦٠٤)
     var khatmaCount: Int = 0                // عدد الختمات المكتملة
-    var design: Int = 4                     // إصدار التصميم (٤ = المخطوطة المذهّبة)
+    var design: Int = 5                     // إصدار التصميم (٥ = السماء الحيّة)
     var quranFont: String = "amiriQuran"    // خط وضع القراءة
     var dhikrFont: String = "system"        // خط نص الأذكار
-    var autoSkin: Bool = false              // عاجي نهارًا وحبر ليلًا حسب مواقيت مدينتك
+    var autoSkin: Bool = true               // السماء الحيّة: تتبع وقت الصلاة في مدينتك
     var homeHidden: [String] = []           // أقسام الرئيسية المخفية
 
     init() {}
@@ -772,7 +777,7 @@ struct Saved: Codable {
         homeHidden = (try? c.decode([String].self, forKey: .homeHidden)) ?? d.homeHidden
         // أول تشغيل للتصميم الجديد: نبدأ بمظهر المخطوطة العاجي
         design = (try? c.decode(Int.self, forKey: .design)) ?? 0
-        if design < 4 { skin = .sand; design = 4 }
+        if design < 5 { skin = .night; autoSkin = true; design = 5 }
     }
 }
 
@@ -795,12 +800,9 @@ final class AppState: ObservableObject {
         if let d = try? JSONEncoder().encode(s) { UserDefaults.standard.set(d, forKey: Self.key) }
     }
 
-    /// المظهر الحالي: الثابت، أو التلقائي (عاجي من الفجر إلى المغرب، وحبر بعده)
+    /// السماء الحالية: حيّة تتبع الوقت، أو ثابتة على وقت تختاره
     var skin: Skin {
-        guard s.autoSkin else { return s.skin }
-        let t = PrayerTimes.compute(for: now, city: city)
-        let h = now.timeIntervalSince(AR.gregorian.startOfDay(for: now)) / 3600
-        return (h >= t.fajr && h < t.maghrib) ? .sand : .night
+        s.autoSkin ? Skin.at(now, city: city) : s.skin
     }
     /// النسخة الحية (للاختصارات و Siri)
     static weak var current: AppState?
@@ -1092,8 +1094,8 @@ final class NotificationRouter: NSObject, ObservableObject, UNUserNotificationCe
         guard url.scheme == RawhLink.scheme else { return }
         switch url.host ?? "" {
         case "cat": openCat = url.pathComponents.dropFirst().first
-        case "sebha": tab = 2
-        case "quran": tab = 1
+        case "sebha": tab = 3
+        case "quran": tab = 2
         default: tab = 0
         }
     }
@@ -1165,183 +1167,141 @@ final class QiblaManager: NSObject, ObservableObject, CLLocationManagerDelegate 
     func locationManagerShouldDisplayHeadingCalibration(_ manager: CLLocationManager) -> Bool { true }
 }
 
-// MARK: - هوية المخطوطة المذهّبة: ورق عاجي، حبر، لازورد، وذهب
+// MARK: - هوية «السماء الحيّة»: سماء تتبدّل مع أوقات الصلاة، وزجاج فوقها، وخط نظيف
 
-/// حبيبات الورق: نقاط دقيقة ثابتة تعطي ملمس الرَّق
-struct PaperGrain: View {
-    var color: Color
-    var opacity: Double
+/// نجوم ثابتة المواقع (تُرسم مرة وتُخزَّن كصورة)
+struct StarField: View {
+    var count = 90
     var body: some View {
         Canvas { ctx, size in
-            var seed: UInt64 = 0x9E3779B97F4A7C15
+            var seed: UInt64 = 0x2545F4914F6CDD1D
             func rnd() -> CGFloat {
                 seed = seed &* 6364136223846793005 &+ 1442695040888963407
                 return CGFloat((seed >> 33) % 10_000) / 10_000
             }
-            let n = Int(size.width * size.height / 260)
-            for _ in 0..<n {
-                let x = rnd() * size.width, y = rnd() * size.height, r = 0.35 + rnd() * 0.9
-                ctx.fill(Path(ellipseIn: CGRect(x: x, y: y, width: r, height: r)), with: .color(color.opacity(opacity * Double(0.4 + rnd()))))
+            for i in 0..<count {
+                let x = rnd() * size.width, y = rnd() * size.height * 0.75
+                let r = 0.6 + rnd() * (i % 9 == 0 ? 2.0 : 1.1)
+                ctx.fill(Path(ellipseIn: CGRect(x: x, y: y, width: r, height: r)), with: .color(.white.opacity(Double(0.35 + rnd() * 0.6))))
             }
         }
+        .drawingGroup()
         .allowsHitTesting(false)
+    }
+}
+
+/// خلفية السماء: تدرّج الوقت، وضوء الشمس أو القمر، ونجوم في الليل والفجر
+struct SkyBackground: View {
+    var skin: Skin
+    var showMoon = true
+    @State private var twinkle = false
+    @Environment(\.accessibilityReduceMotion) private var reduce
+    var body: some View {
+        ZStack {
+            LinearGradient(stops: [
+                .init(color: skin.bg, location: 0),
+                .init(color: skin.mid, location: 0.55),
+                .init(color: skin.bg2, location: 1)
+            ], startPoint: .top, endPoint: .bottom)
+            // الضوء: شمس عالية في الضحى، مائلة في العصر، على الأفق في الفجر والمغرب، وقمر في الليل
+            RadialGradient(colors: [skin.goldLight.opacity(glow), .clear], center: lightCenter, startRadius: 2, endRadius: 360)
+            if skin == .night || skin == .fajr {
+                StarField(count: skin == .night ? 110 : 45)
+                    .opacity(skin == .night ? (twinkle ? 1 : 0.75) : 0.45)
+                if skin == .night && showMoon {
+                    Circle().fill(Color(hex: 0xFFF6DC)).frame(width: 46, height: 46)
+                        .overlay(Circle().fill(skin.bg).frame(width: 40, height: 40).offset(x: 12, y: -6))
+                        .shadow(color: Color(hex: 0xFFF1C9).opacity(0.6), radius: 24)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .padding(.top, 70).padding(.leading, 34)
+                        .opacity(0.9)
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .animation(.easeInOut(duration: 1.4), value: skin)
+        .onAppear {
+            guard !reduce else { return }
+            withAnimation(.easeInOut(duration: 3.2).repeatForever(autoreverses: true)) { twinkle = true }
+        }
+    }
+    private var glow: Double {
+        switch skin { case .duha: return 0.55; case .asr: return 0.5; case .maghrib: return 0.65; case .fajr: return 0.45; case .night: return 0.12 }
+    }
+    private var lightCenter: UnitPoint {
+        switch skin {
+        case .duha: return UnitPoint(x: 0.82, y: 0.06)
+        case .asr: return UnitPoint(x: 0.12, y: 0.22)
+        case .maghrib: return UnitPoint(x: 0.5, y: 1.0)
+        case .fajr: return UnitPoint(x: 0.5, y: 1.05)
+        case .night: return UnitPoint(x: 0.15, y: 0.1)
+        }
     }
 }
 
 struct ScreenBackground: View {
     @EnvironmentObject var app: AppState
-    var body: some View {
-        let k = app.skin
-        ZStack {
-            LinearGradient(colors: [k.bg, k.bg2], startPoint: .top, endPoint: .bottom)
-            RadialGradient(colors: [k.goldLight.opacity(k.isLight ? 0.22 : 0.10), .clear], center: UnitPoint(x: 0.5, y: 0.08), startRadius: 10, endRadius: 460)
-            PatternBackground(color: k.gold, opacity: k.isLight ? 0.07 : 0.05, cell: 78)
-            PaperGrain(color: k.isLight ? Color(hex: 0x5A3E12) : .white, opacity: k.isLight ? 0.10 : 0.05)
-            // حواف الصفحة أغمق قليلًا مثل الورق القديم
-            RadialGradient(colors: [.clear, k.bg2.opacity(k.isLight ? 0.55 : 0.6)], center: .center, startRadius: 260, endRadius: 720)
-        }
-        .ignoresSafeArea()
-    }
+    var body: some View { SkyBackground(skin: app.skin) }
 }
 
-/// وردة التذهيب الصغيرة: مَعين لازوردي بإطار ذهبي
+/// نقطة لمسة صغيرة
 struct Rosette: View {
     @EnvironmentObject var app: AppState
-    var size: CGFloat = 12
+    var size: CGFloat = 8
     var body: some View {
-        ZStack {
-            Rectangle().fill(app.skin.lapis).frame(width: size * 0.7, height: size * 0.7).rotationEffect(.degrees(45))
-            Rectangle().strokeBorder(app.skin.gold, lineWidth: max(0.8, size * 0.09)).frame(width: size * 0.7, height: size * 0.7).rotationEffect(.degrees(45))
-            Circle().fill(app.skin.goldLight).frame(width: size * 0.22, height: size * 0.22)
-        }
-        .frame(width: size, height: size)
+        Circle().fill(app.skin.gold).frame(width: size * 0.6, height: size * 0.6)
+            .shadow(color: app.skin.gold.opacity(0.7), radius: 4)
+            .frame(width: size, height: size)
     }
 }
 
-/// فاصل زخرفي: خط مزدوج — وردة — خط مزدوج
+/// فاصل هادئ
 struct Ornament: View {
     @EnvironmentObject var app: AppState
-    var width: CGFloat = 140
+    var width: CGFloat = 120
     var body: some View {
         HStack(spacing: 6) {
-            rule(reversed: false)
-            Circle().fill(app.skin.gold).frame(width: 3, height: 3)
-            Rosette(size: 13)
-            Circle().fill(app.skin.gold).frame(width: 3, height: 3)
-            rule(reversed: true)
+            Capsule().fill(LinearGradient(colors: [.clear, app.skin.text.opacity(0.4)], startPoint: .leading, endPoint: .trailing)).frame(height: 1)
+            Image(systemName: "sparkle").font(.system(size: 9, weight: .bold)).foregroundStyle(app.skin.gold)
+            Capsule().fill(LinearGradient(colors: [app.skin.text.opacity(0.4), .clear], startPoint: .leading, endPoint: .trailing)).frame(height: 1)
         }
         .frame(width: width)
     }
-    private func rule(reversed: Bool) -> some View {
-        let g = LinearGradient(colors: [.clear, app.skin.gold.opacity(0.85)], startPoint: reversed ? .trailing : .leading, endPoint: reversed ? .leading : .trailing)
-        return VStack(spacing: 2) {
-            Rectangle().fill(g).frame(height: 1)
-            Rectangle().fill(g).frame(height: 0.5).opacity(0.6)
-        }
-    }
 }
 
-/// إطار التذهيب: خط ذهبي، وخط شعري داخله، وورود في الأركان
-struct IlluminatedFrame: View {
-    var gold: Color
-    var radius: CGFloat = 20
-    var corners = true
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(gold.opacity(0.75), lineWidth: 1.1)
-            RoundedRectangle(cornerRadius: max(4, radius - 5), style: .continuous).strokeBorder(gold.opacity(0.32), lineWidth: 0.6).padding(5)
-            if corners {
-                GeometryReader { g in
-                    let w = g.size.width, h = g.size.height, d: CGFloat = 5 + radius * 0.3
-                    ForEach(0..<4, id: \.self) { i in
-                        StarBurst(points: 8).fill(gold)
-                            .frame(width: 9, height: 9)
-                            .position(x: i % 2 == 0 ? d : w - d, y: i < 2 ? d : h - d)
-                    }
-                }
-            }
-        }
-        .allowsHitTesting(false)
-    }
-}
-
-/// ورود ذهبية صغيرة في أركان البطاقة
-struct CornerFleurons: View {
-    var color: Color
-    var inset: CGFloat = 12
-    var body: some View {
-        GeometryReader { g in
-            ForEach(0..<4, id: \.self) { i in
-                StarBurst(points: 8).fill(color)
-                    .frame(width: 8, height: 8)
-                    .position(x: i % 2 == 0 ? inset : g.size.width - inset, y: i < 2 ? inset : g.size.height - inset)
-            }
-        }
-        .allowsHitTesting(false)
-    }
-}
-
-/// صفحة ورق بإطار مذهّب (أساس كل البطاقات)
+/// بطاقة زجاجية
 struct Card<C: View>: View {
     @EnvironmentObject var app: AppState
-    var padding: CGFloat = 16
-    var radius: CGFloat = 22
+    var padding: CGFloat = 18
+    var radius: CGFloat = 26
     var highlight = false
     @ViewBuilder var content: () -> C
     var body: some View {
         content()
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .surface(radius, skin: app.skin, highlight: highlight, tint: highlight ? app.skin.card2 : nil)
+            .surface(radius, skin: app.skin, highlight: highlight)
     }
 }
 
-/// ترويسة الصفحة على طريقة رؤوس السور في المصاحف: لوح لازوردي بإطار ذهبي وميداليتين
+/// عنوان الشاشة الكبير
 struct Unwan: View {
     @EnvironmentObject var app: AppState
     var title: String
     var subtitle: String? = nil
     var compact = false
     var body: some View {
-        let h: CGFloat = compact ? 58 : 74
-        VStack(spacing: 8) {
-            ZStack {
-                HStack(spacing: 0) {
-                    medallion(h)
-                    Spacer()
-                    medallion(h)
-                }
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(LinearGradient(colors: [app.skin.lapisLight.opacity(app.skin.isLight ? 1 : 0.55), app.skin.lapis], startPoint: .top, endPoint: .bottom))
-                    PatternBackground(color: app.skin.goldLight, opacity: 0.16, cell: 34)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(app.skin.gold, lineWidth: 1.6)
-                    RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(app.skin.goldLight.opacity(0.6), lineWidth: 0.6).padding(4)
-                    Text(title)
-                        .rawhText(compact ? 20 : 25, .bold)
-                        .foregroundStyle(LinearGradient(colors: [Color(hex: 0xF7E2A8), app.skin.isLight ? Color(hex: 0xD6AE5C) : app.skin.goldLight], startPoint: .top, endPoint: .bottom))
-                        .lineLimit(1).minimumScaleFactor(0.6)
-                        .padding(.horizontal, 22)
-                }
-                .frame(height: h)
-                .padding(.horizontal, h * 0.42)
-                .shadow(color: app.skin.shadow, radius: 8, y: 4)
-            }
-            .frame(height: h)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: compact ? 30 : 36, weight: .bold))
+                .foregroundStyle(app.skin.text)
+                .lineLimit(1).minimumScaleFactor(0.7)
             if let subtitle {
-                Text(subtitle).rawhText(13).foregroundStyle(app.skin.sub).multilineTextAlignment(.center)
+                Text(subtitle).rawhText(14.5).foregroundStyle(app.skin.sub).fixedSize(horizontal: false, vertical: true)
             }
         }
-    }
-    private func medallion(_ h: CGFloat) -> some View {
-        ZStack {
-            Circle().fill(LinearGradient(colors: [app.skin.goldLight, app.skin.gold], startPoint: .top, endPoint: .bottom))
-            Circle().fill(app.skin.lapis).padding(h * 0.09)
-            Circle().strokeBorder(app.skin.goldLight.opacity(0.8), lineWidth: 0.7).padding(h * 0.14)
-            EightStar().fill(app.skin.goldLight).padding(h * 0.2)
-        }
-        .frame(width: h * 0.72, height: h * 0.72)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
     }
 }
 
@@ -1354,56 +1314,48 @@ struct ProgressRing: View {
         ZStack {
             Circle().stroke(track, lineWidth: width)
             Circle().trim(from: 0, to: max(0.001, min(1, progress)))
-                .stroke(LinearGradient(colors: [color.opacity(0.75), color], startPoint: .top, endPoint: .bottom), style: StrokeStyle(lineWidth: width, lineCap: .round))
+                .stroke(color, style: StrokeStyle(lineWidth: width, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .animation(.spring(response: 0.5, dampingFraction: 0.8), value: progress)
-            // علامات الساعة حول الحلقة
-            ForEach(0..<12, id: \.self) { i in
-                Capsule().fill(color.opacity(0.35)).frame(width: 1, height: width * 0.55)
-                    .offset(y: -1)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .rotationEffect(.degrees(Double(i) * 30))
-            }
-            .padding(-width * 1.3)
+                .shadow(color: color.opacity(0.5), radius: width * 0.8)
+                .animation(.spring(response: 0.6, dampingFraction: 0.85), value: progress)
         }
     }
 }
 
-/// زر ورق الذهب
+/// الزر الأساسي: كبسولة بضوء الوقت
 struct GoldButtonStyle: ButtonStyle {
     var skin: Skin
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 16, weight: .bold))
             .foregroundStyle(skin.onGold)
-            .padding(.horizontal, 22).padding(.vertical, 13)
+            .padding(.horizontal, 22).padding(.vertical, 14)
             .goldPill(skin)
-            .scaleEffect(configuration.isPressed ? 0.95 : 1)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .brightness(configuration.isPressed ? -0.04 : 0)
+            .animation(.spring(response: 0.28, dampingFraction: 0.65), value: configuration.isPressed)
     }
 }
 
-/// زر ورقي بإطار ذهبي
+/// الزر الثانوي: كبسولة زجاج
 struct GhostButtonStyle: ButtonStyle {
     var skin: Skin
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(skin.text)
-            .padding(.horizontal, 16).padding(.vertical, 12)
-            .background(Capsule().fill(skin.card))
-            .overlay(Capsule().strokeBorder(skin.gold.opacity(0.7), lineWidth: 0.9))
-            .overlay(Capsule().strokeBorder(skin.gold.opacity(0.25), lineWidth: 0.5).padding(3))
-            .scaleEffect(configuration.isPressed ? 0.95 : 1)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
+            .padding(.horizontal, 18).padding(.vertical, 13)
+            .glassCapsule(skin: skin)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.spring(response: 0.28, dampingFraction: 0.65), value: configuration.isPressed)
     }
 }
 
-/// زر دائري: ميدالية ورقية بحلقة ذهبية
+/// زر دائري زجاجي
 struct IconButton: View {
     @EnvironmentObject var app: AppState
     var symbol: String
-    var size: CGFloat = 40
+    var size: CGFloat = 42
     var active = false
     var action: () -> Void
     @State private var tick = 0
@@ -1413,7 +1365,7 @@ struct IconButton: View {
         } label: {
             Image(systemName: symbol)
                 .font(.system(size: size * 0.4, weight: .semibold))
-                .foregroundStyle(active ? app.skin.onGold : app.skin.lapis)
+                .foregroundStyle(active ? app.skin.onGold : app.skin.text)
                 .symbolEffect(.bounce, value: tick)
                 .frame(width: size, height: size)
                 .glassCircle(skin: app.skin, active: active)
@@ -1423,27 +1375,57 @@ struct IconButton: View {
     }
 }
 
-/// أيقونة القسم: ميدالية لازوردية بإطار ذهبي
+/// ألوان مميزة لكل نوع: أيقونة ملوّنة على مربع ناعم الحواف
+enum IconTint {
+    static func colors(_ ic: String) -> [Color] {
+        switch ic {
+        case "sun": return [Color(hex: 0xFFC94A), Color(hex: 0xFF8A3D)]
+        case "moon": return [Color(hex: 0x7B7CFF), Color(hex: 0x3B3AA8)]
+        case "bed": return [Color(hex: 0xB78CFF), Color(hex: 0x6A3FC8)]
+        case "rise": return [Color(hex: 0xFF9DB5), Color(hex: 0xF0657F)]
+        case "shield": return [Color(hex: 0x4FD6C4), Color(hex: 0x14928A)]
+        case "heart": return [Color(hex: 0xFF7A7A), Color(hex: 0xD6384E)]
+        case "path": return [Color(hex: 0x7EE08A), Color(hex: 0x2E9B5A)]
+        case "star", "arch": return [Color(hex: 0xFFE08A), Color(hex: 0xD49A2E)]
+        default: return [Color(hex: 0x8EC8FF), Color(hex: 0x3B7DD8)]
+        }
+    }
+    /// ألوان الأدوات حسب رمزها
+    static func forSymbol(_ s: String) -> [Color] {
+        if s.contains("checkmark") { return colors("path") }
+        if s.contains("book") { return [Color(hex: 0x6FD3FF), Color(hex: 0x2A7FD0)] }
+        if s.contains("calendar") || s.contains("tablecells") { return colors("rise") }
+        if s.contains("banknote") { return colors("path") }
+        if s.contains("medal") || s.contains("sparkles") || s.contains("star") { return colors("star") }
+        if s.contains("bell") { return colors("heart") }
+        if s.contains("location") || s.contains("safari") { return colors("shield") }
+        if s.contains("hands") || s.contains("heart") { return colors("heart") }
+        if s.contains("moon") { return colors("moon") }
+        if s.contains("bookmark") { return colors("sun") }
+        if s.contains("chart") { return colors("bed") }
+        if s.contains("wand") || s.contains("paintpalette") { return colors("bed") }
+        if s.contains("externaldrive") || s.contains("gear") || s.contains("slider") { return [Color(hex: 0xB9C3D6), Color(hex: 0x6B778D)] }
+        if s.contains("play") { return colors("sun") }
+        return colors("")
+    }
+}
+
+/// أيقونة القسم: مربع ناعم الحواف بتدرّج لونه ورمز أبيض
 struct CategoryIcon: View {
     @EnvironmentObject var app: AppState
     var ic: String
     var size: CGFloat = 46
     var body: some View {
-        ZStack {
-            Circle().fill(LinearGradient(colors: [app.skin.goldLight, app.skin.gold], startPoint: .top, endPoint: .bottom))
-            Circle().fill(LinearGradient(colors: [app.skin.lapisLight.opacity(app.skin.isLight ? 1 : 0.7), app.skin.lapis], startPoint: .top, endPoint: .bottom)).padding(size * 0.07)
-            Circle().strokeBorder(app.skin.goldLight.opacity(0.55), lineWidth: 0.6).padding(size * 0.12)
+        TintTile(colors: IconTint.colors(ic), size: size) {
             if ic == "arch" {
-                ArchShape().stroke(app.skin.goldLight, style: StrokeStyle(lineWidth: 1.8, lineJoin: .round))
+                ArchShape().stroke(.white, style: StrokeStyle(lineWidth: 2, lineJoin: .round))
                     .frame(width: size * 0.36, height: size * 0.44)
             } else {
                 Image(systemName: Self.symbol(ic))
-                    .font(.system(size: size * 0.38, weight: .medium))
-                    .foregroundStyle(app.skin.goldLight)
+                    .font(.system(size: size * 0.44, weight: .semibold))
+                    .foregroundStyle(.white)
             }
         }
-        .frame(width: size, height: size)
-        .shadow(color: app.skin.shadow, radius: 3, y: 2)
     }
     static func symbol(_ ic: String) -> String {
         switch ic {
@@ -1460,20 +1442,32 @@ struct CategoryIcon: View {
     }
 }
 
-/// ميدالية برمز Apple (للأدوات والقوائم)
-struct Medallion: View {
-    @EnvironmentObject var app: AppState
-    var symbol: String
+/// مربع الأيقونة الملوّن
+struct TintTile<C: View>: View {
+    var colors: [Color]
     var size: CGFloat = 44
+    @ViewBuilder var content: () -> C
     var body: some View {
         ZStack {
-            Circle().fill(app.skin.card2)
-            Circle().strokeBorder(app.skin.gold.opacity(0.8), lineWidth: 1)
-            Circle().strokeBorder(app.skin.gold.opacity(0.3), lineWidth: 0.5).padding(3)
-            Image(systemName: symbol).font(.system(size: size * 0.4, weight: .medium)).foregroundStyle(app.skin.lapis)
-                .symbolRenderingMode(.hierarchical)
+            RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
+                .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
+            RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
+                .fill(LinearGradient(colors: [.white.opacity(0.28), .clear], startPoint: .top, endPoint: .center))
+            content()
         }
         .frame(width: size, height: size)
+        .shadow(color: (colors.last ?? .black).opacity(0.35), radius: 6, y: 3)
+    }
+}
+
+/// أيقونة أداة برمز Apple على مربع ملوّن
+struct Medallion: View {
+    var symbol: String
+    var size: CGFloat = 40
+    var body: some View {
+        TintTile(colors: IconTint.forSymbol(symbol), size: size) {
+            Image(systemName: symbol).font(.system(size: size * 0.44, weight: .semibold)).foregroundStyle(.white)
+        }
     }
 }
 
@@ -1495,41 +1489,42 @@ struct KaabaIcon: View {
 // MARK: - أيقونة التطبيق (قابلة للتغيير)
 
 enum AppIconChoice: String, CaseIterable, Identifiable {
-    case lapis, ivory, emerald, night, gold, mihrab
+    case night, fajr, duha, maghrib, gold, mihrab
     var id: String { rawValue }
-    /// اسم الأيقونة البديلة في التطبيق (nil = الأساسية)
+    /// اسم الأيقونة البديلة (nil = الأساسية: سماء الليل)
     var assetName: String? {
         switch self {
-        case .lapis: return nil
-        case .ivory: return "AppIcon-Ivory"
-        case .emerald: return "AppIcon-Emerald"
-        case .night: return "AppIcon-Night"
+        case .night: return nil
+        case .fajr: return "AppIcon-Fajr"
+        case .duha: return "AppIcon-Duha"
+        case .maghrib: return "AppIcon-Maghrib"
         case .gold: return "AppIcon-Gold"
         case .mihrab: return "AppIcon-Mihrab"
         }
     }
     var title: String {
         switch self {
-        case .lapis: return "لازورد"
-        case .ivory: return "عاجي"
-        case .emerald: return "زمرّد"
-        case .night: return "ليل"
+        case .night: return "الليل"
+        case .fajr: return "الفجر"
+        case .duha: return "الضحى"
+        case .maghrib: return "المغرب"
         case .gold: return "ذهبي"
         case .mihrab: return "المحراب"
         }
     }
     var colors: (top: Color, bottom: Color, line: Color) {
         switch self {
-        case .lapis: return (Color(hex: 0x24468A), Color(hex: 0x0E1C3D), Color(hex: 0xE2C27A))
-        case .ivory: return (Color(hex: 0xF8F0DE), Color(hex: 0xE7D6B2), Color(hex: 0x1F3B73))
-        case .emerald, .mihrab: return (Color(hex: 0x14473A), Color(hex: 0x062019), Color(hex: 0xE2C88E))
-        case .night: return (Color(hex: 0x1A2220), Color(hex: 0x050807), Color(hex: 0xE2C88E))
+        case .night: return (Color(hex: 0x1B2452), Color(hex: 0x04071A), Color(hex: 0xF3D38C))
+        case .fajr: return (Color(hex: 0x2B2A6A), Color(hex: 0xE39C9B), Color(hex: 0xFFFFFF))
+        case .duha: return (Color(hex: 0x1E5FB4), Color(hex: 0x9DD0F7), Color(hex: 0xFFFFFF))
+        case .maghrib: return (Color(hex: 0x3A2363), Color(hex: 0xEE8248), Color(hex: 0xFFE3C2))
         case .gold: return (Color(hex: 0xF1D9A2), Color(hex: 0xB98E45), Color(hex: 0x0B2A22))
+        case .mihrab: return (Color(hex: 0x14473A), Color(hex: 0x062019), Color(hex: 0xE2C88E))
         }
     }
     static func current() -> AppIconChoice {
         let n = UIApplication.shared.alternateIconName
-        return allCases.first { $0.assetName == n } ?? .lapis
+        return allCases.first { $0.assetName == n } ?? .night
     }
 }
 
@@ -1590,78 +1585,65 @@ struct Emblem: View {
                 .stroke(app.skin.gold, style: StrokeStyle(lineWidth: size * 0.03, lineCap: .round, lineJoin: .round))
                 .frame(width: size * 0.76, height: size * 0.76)
             RawhWord()
-                .fill(app.skin.isLight ? app.skin.lapis : app.skin.goldLight)
-                .overlay(RawhWord().stroke(app.skin.isLight ? app.skin.lapis : app.skin.goldLight, style: StrokeStyle(lineWidth: size * 0.3 * 0.019, lineJoin: .round)))
+                .fill(Color.white)
+                .overlay(RawhWord().stroke(Color.white, style: StrokeStyle(lineWidth: size * 0.3 * 0.019, lineJoin: .round)))
                 .environment(\.layoutDirection, .leftToRight)   // الرسمة ما تنعكس في الواجهة العربية
                 .frame(width: size * 0.3, height: size * 0.3 * RawhWord.ratio)
                 .opacity(animate ? Double(drawn) : 1)
                 .scaleEffect(animate ? 0.9 + 0.1 * drawn : 1)
         }
         .frame(width: size, height: size)
-        .onAppear { if animate { withAnimation(.easeInOut(duration: 1.8)) { drawn = 1 } } }
+        .onAppear { if animate { withAnimation(.easeInOut(duration: 1.1)) { drawn = 1 } } }
     }
 }
 
-// MARK: - الأسطح: ورق مذهّب للبطاقات، وزجاج سائل للأزرار العائمة (iOS 26)
+// MARK: - الأسطح: زجاج مصبوغ بلون السماء (خفيف وسريع)، وزجاج سائل للأزرار (iOS 26)
 
 extension View {
-    /// سطح البطاقات: ورق، إطار ذهبي مزدوج، وظل خفيف
+    /// سطح البطاقات: زجاج مصبوغ بلون الوقت مع حافة ضوئية
     @ViewBuilder func surface(_ radius: CGFloat, skin: Skin, highlight: Bool = false, tint: Color? = nil, stroke: Color? = nil) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        let edge = stroke ?? skin.gold
         self
             .background(
-                ZStack {
-                    shape.fill(LinearGradient(colors: [tint ?? skin.card, (tint ?? skin.card).opacity(0.92)], startPoint: .top, endPoint: .bottom))
-                    if highlight {
-                        shape.fill(RadialGradient(colors: [skin.goldLight.opacity(skin.isLight ? 0.18 : 0.10), .clear], center: .top, startRadius: 4, endRadius: 260))
-                    }
-                }
-                .shadow(color: skin.shadow, radius: highlight ? 10 : 6, y: highlight ? 5 : 3)
+                shape.fill(tint ?? skin.card)
+                    .overlay(shape.fill(LinearGradient(colors: [.white.opacity(highlight ? 0.16 : 0.09), .white.opacity(0.02)], startPoint: .top, endPoint: .bottom)))
             )
-            .overlay(shape.strokeBorder(edge.opacity(highlight || stroke != nil ? 0.8 : 0.5), lineWidth: highlight ? 1.2 : 0.8))
             .overlay(
-                RoundedRectangle(cornerRadius: max(3, radius - 4), style: .continuous)
-                    .strokeBorder(edge.opacity(highlight ? 0.35 : 0.18), lineWidth: 0.5)
-                    .padding(4)
+                shape.strokeBorder(LinearGradient(colors: [(stroke ?? .white).opacity(highlight ? 0.5 : 0.32), (stroke ?? .white).opacity(0.06)], startPoint: .top, endPoint: .bottom), lineWidth: highlight ? 1.1 : 0.8)
             )
-            .overlay { if highlight { CornerFleurons(color: edge, inset: 9 + radius * 0.12) } }
+            .shadow(color: .black.opacity(highlight ? 0.16 : 0.08), radius: highlight ? 18 : 10, y: highlight ? 8 : 4)
     }
     /// زر دائري
     @ViewBuilder func glassCircle(skin: Skin, active: Bool = false) -> some View {
         if #available(iOS 26.0, *) {
-            self.glassEffect(active ? .regular.tint(skin.gold).interactive() : .regular.tint(skin.card.opacity(0.55)).interactive(), in: Circle())
-                .overlay(Circle().strokeBorder(skin.gold.opacity(active ? 0 : 0.55), lineWidth: 0.8))
+            self.glassEffect(active ? .regular.tint(skin.gold).interactive() : .regular.interactive(), in: Circle())
         } else {
-            self.background(Circle().fill(active ? skin.gold : skin.card))
-                .overlay(Circle().strokeBorder(skin.gold.opacity(0.6), lineWidth: 0.8))
-                .shadow(color: skin.shadow, radius: 3, y: 2)
+            self.background(Circle().fill(active ? AnyShapeStyle(skin.gold) : AnyShapeStyle(.ultraThinMaterial)))
+                .overlay(Circle().strokeBorder(.white.opacity(0.25), lineWidth: 0.7))
         }
     }
-    /// كبسولة (أزرار وشرائح)
+    /// كبسولة زجاج
     @ViewBuilder func glassCapsule(skin: Skin, tint: Color? = nil, fallback: Color? = nil) -> some View {
         if #available(iOS 26.0, *) {
-            self.glassEffect(.regular.tint(tint ?? skin.card.opacity(0.5)).interactive(), in: Capsule())
-                .overlay(Capsule().strokeBorder(skin.gold.opacity(0.45), lineWidth: 0.7))
+            if let tint { self.glassEffect(.regular.tint(tint).interactive(), in: Capsule()) }
+            else { self.glassEffect(.regular.interactive(), in: Capsule()) }
         } else {
-            self.background(Capsule().fill(fallback ?? tint ?? skin.card))
-                .overlay(Capsule().strokeBorder(skin.gold.opacity(0.5), lineWidth: 0.8))
+            self.background(Capsule().fill(fallback.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.ultraThinMaterial)))
+                .overlay(Capsule().strokeBorder(.white.opacity(0.25), lineWidth: 0.7))
         }
     }
-    /// ورق الذهب
+    /// كبسولة بضوء الوقت
     func goldPill(_ skin: Skin) -> some View {
         self
-            .background(Capsule().fill(LinearGradient(colors: [skin.goldLight, skin.gold, skin.gold.opacity(0.92)], startPoint: .top, endPoint: .bottom)))
-            .overlay(Capsule().strokeBorder(Color.white.opacity(skin.isLight ? 0.45 : 0.25), lineWidth: 0.7).padding(2.5))
-            .overlay(Capsule().strokeBorder(skin.gold.opacity(0.9), lineWidth: 0.8))
-            .shadow(color: skin.gold.opacity(0.35), radius: 8, y: 3)
+            .background(Capsule().fill(LinearGradient(colors: [skin.goldLight, skin.gold], startPoint: .top, endPoint: .bottom)))
+            .overlay(Capsule().strokeBorder(.white.opacity(0.5), lineWidth: 0.8))
+            .shadow(color: skin.gold.opacity(0.45), radius: 12, y: 4)
     }
     /// حبة السبحة الكبيرة
     @ViewBuilder func beadSurface(_ skin: Skin) -> some View {
-        self.background(Circle().fill(RadialGradient(colors: [skin.card, skin.card2], center: .topLeading, startRadius: 10, endRadius: 220)))
-            .overlay(Circle().strokeBorder(skin.gold.opacity(0.75), lineWidth: 1.4))
-            .overlay(Circle().strokeBorder(skin.gold.opacity(0.3), lineWidth: 0.6).padding(7))
-            .shadow(color: skin.shadow, radius: 14, y: 8)
+        self.background(Circle().fill(RadialGradient(colors: [.white.opacity(0.26), skin.card], center: .topLeading, startRadius: 10, endRadius: 260)))
+            .overlay(Circle().strokeBorder(LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.2))
+            .shadow(color: .black.opacity(0.2), radius: 24, y: 12)
     }
     /// شريط التبويبات يصغر عند التمرير (iOS 26)
     @ViewBuilder func minimizingTabBar() -> some View {
@@ -1687,27 +1669,25 @@ extension View {
         if #available(iOS 18.0, *) { self.symbolEffect(.rotate, value: value) }
         else { self.symbolEffect(.bounce, value: value) }
     }
+    /// الخط الرسمي: SF Arabic، وأصغر حجم ١٢ للوضوح
     func rawhText(_ size: CGFloat, _ weight: Font.Weight = .regular) -> some View {
-        self.font(.system(size: size, weight: weight))
+        self.font(.system(size: max(12, size), weight: weight))
     }
 }
 
-/// عنوان القسم بحُمرة العناوين كما في المخطوطات
+/// عنوان القسم
 struct SectionTitle: View {
     @EnvironmentObject var app: AppState
     var title: String
     var trailing: String? = nil
     var body: some View {
-        HStack(alignment: .center, spacing: 9) {
-            Rosette(size: 12)
-            Text(title).rawhText(18, .bold).foregroundStyle(app.skin.rubric).fixedSize()
-            VStack(spacing: 2) {
-                Rectangle().fill(app.skin.gold.opacity(0.6)).frame(height: 0.8)
-                Rectangle().fill(app.skin.gold.opacity(0.3)).frame(height: 0.5)
-            }
-            if let trailing { Text(trailing).rawhText(12.5, .medium).foregroundStyle(app.skin.sub).fixedSize() }
+        HStack(alignment: .firstTextBaseline) {
+            Text(title).font(.system(size: 21, weight: .bold)).foregroundStyle(app.skin.text)
+            Spacer()
+            if let trailing { Text(trailing).rawhText(13, .medium).foregroundStyle(app.skin.sub) }
         }
-        .padding(.top, 10)
+        .padding(.top, 8)
+        .shadow(color: .black.opacity(0.1), radius: 6, y: 1)
     }
 }
 
@@ -1766,33 +1746,6 @@ enum RawhGrid {
     }
 }
 
-/// توهّج ذهبي متحرك خلف الشعار (شبكة ألوان iOS 18، وتدرّج ثابت قبلها)
-struct GildedGlow: View {
-    @EnvironmentObject var app: AppState
-    @Environment(\.accessibilityReduceMotion) private var reduce
-    var body: some View {
-        if #available(iOS 18.0, *) {
-            TimelineView(.animation(minimumInterval: 1 / 20, paused: reduce)) { tl in
-                let t = Float(tl.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1000))
-                let k = app.skin
-                let cx: Float = 0.5 + 0.12 * sin(t * 0.7)
-                let cy: Float = 0.5 + 0.1 * cos(t * 0.5)
-                let pts: [SIMD2<Float>] = [
-                    SIMD2(0, 0), SIMD2(0.5, 0), SIMD2(1, 0),
-                    SIMD2(0, 0.5), SIMD2(cx, cy), SIMD2(1, 0.5),
-                    SIMD2(0, 1), SIMD2(0.5, 1), SIMD2(1, 1)
-                ]
-                MeshGradient(width: 3, height: 3, points: pts, colors: [
-                    k.card, k.goldLight.opacity(0.35), k.card,
-                    k.goldLight.opacity(0.25), k.card2, k.lapisLight.opacity(0.18),
-                    k.card, k.gold.opacity(0.22), k.card
-                ])
-            }
-        } else {
-            RadialGradient(colors: [app.skin.goldLight.opacity(0.25), app.skin.card], center: .center, startRadius: 4, endRadius: 220)
-        }
-    }
-}
 
 
 // MARK: - لمسات فنية
@@ -1964,8 +1917,8 @@ struct SplashView: View {
             }
         }
         .onAppear {
-            withAnimation(.easeOut(duration: 0.7).delay(0.9)) { show = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.1) { done() }
+            withAnimation(.easeOut(duration: 0.5).delay(0.55)) { show = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { done() }
         }
     }
 }
@@ -1976,14 +1929,14 @@ extension View {
         self.scrollTransition(.animated(.spring(response: 0.45, dampingFraction: 0.85))) { content, phase in
             content
                 .opacity(phase.isIdentity ? 1 : 0.55)
-                .scaleEffect(phase.isIdentity ? 1 : 0.95)
-                .blur(radius: phase.isIdentity ? 0 : 1.5)
+                .scaleEffect(phase.isIdentity ? 1 : 0.96)
         }
     }
 }
 
+// MARK: - اليوم (الرئيسية)
 
-// MARK: - الرئيسية
+enum HomeRoute: Hashable { case qibla, prayers, khatma, calendar, times }
 
 struct HomeView: View {
     @EnvironmentObject var app: AppState
@@ -1994,53 +1947,259 @@ struct HomeView: View {
     @State private var focus = false
     @State private var liveOn = PrayerLive.isRunning
     @State private var liveTick = 0
+    @State private var path: [HomeRoute] = []
     @Namespace private var zoom
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ZStack {
                 ScreenBackground()
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        header.reveal(0)
-                        masthead.parallaxHeader().reveal(1)
-                        if app.shows("wird") { wirdCard.zoomSource("wird", in: zoom).reveal(2) }
-                        if app.shows("prayer") { prayerCard.reveal(3) }
-                        if app.shows("check") { PrayerCheckStrip().reveal(4) }
-                        if app.shows("verse") { verseCard.reveal(5) }
-                        if app.shows("cats") {
-                            SectionTitle(title: "الأذكار", trailing: "\(AR.n(DB.cats.count)) أقسام").reveal(6)
-                            LazyVGrid(columns: RawhGrid.adaptive(150), spacing: 12) {
-                                ForEach(DB.cats) { c in
-                                    Button { openedFromGrid = true; reader = c; focus = false } label: { CategoryTile(cat: c) }
-                                        .buttonStyle(PressScale())
-                                        .zoomSource(c.id, in: zoom)
-                                        .scrollReveal()
-                                }
-                            }
-                        }
+                    VStack(alignment: .leading, spacing: 18) {
+                        topBar.reveal(0)
+                        hero.parallaxHeader().reveal(1)
+                        if app.shows("prayer") { prayerStrip.reveal(2) }
+                        if app.shows("wird") { wirdCard.zoomSource("wird", in: zoom).reveal(3) }
+                        quickActions.reveal(4)
+                        if app.shows("check") { PrayerCheckStrip().reveal(5) }
+                        if app.shows("verse") { verseCard.reveal(6) }
                     }
                     .padding(.horizontal, 18)
-                    .padding(.bottom, 30)
+                    .padding(.bottom, 36)
                     .readableWidth()
                 }
+                .scrollIndicators(.hidden)
             }
             .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: HomeRoute.self) { r in
+                switch r {
+                case .qibla: QiblaView(city: app.city)
+                case .prayers: PrayerLogView()
+                case .khatma: KhatmaView()
+                case .calendar: HijriCalendarView()
+                case .times: MonthlyTimesView()
+                }
+            }
             .sheet(isPresented: $showSettings) { SettingsView().environmentObject(app).rawhSheet(app.skin) }
             .sheet(isPresented: $showSearch) { SearchView().environmentObject(app).rawhSheet(app.skin) }
             .sheet(isPresented: $showCity) { CityPickerSheet().environmentObject(app).rawhSheet(app.skin) }
             .fullScreenCover(item: $reader) { c in
                 ReaderView(cat: c, startFocus: focus).environmentObject(app)
-                    .zoomDestination(zoomId(c), in: zoom)
+                    .zoomDestination("wird", in: zoom)
             }
         }
     }
 
-    /// بطاقة الوِرد تتكبّر من نفسها، والأقسام من مربعاتها
-    private func zoomId(_ c: AdhkarCategory) -> String {
-        c.id == PrayerTimes.currentWird(now: app.now, city: app.city) && app.shows("wird") && !openedFromGrid ? "wird" : c.id
+    // MARK: الشريط العلوي: المدينة، والبحث والإعدادات
+
+    private var topBar: some View {
+        HStack(spacing: 10) {
+            Button { showCity = true } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "location.fill").font(.system(size: 12, weight: .bold))
+                    Text(app.city.n).rawhText(14.5, .semibold)
+                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .bold)).opacity(0.7)
+                }
+                .foregroundStyle(app.skin.text)
+                .padding(.horizontal, 14).padding(.vertical, 9)
+                .glassCapsule(skin: app.skin)
+            }
+            .buttonStyle(PressScale())
+            Spacer()
+            IconButton(symbol: "magnifyingglass") { showSearch = true }
+            IconButton(symbol: "gearshape.fill") { showSettings = true }
+        }
+        .padding(.top, 4)
     }
-    @State private var openedFromGrid = false
+
+    // MARK: البطل: وقت السماء، والصلاة القادمة بعدّ تنازلي كبير
+
+    private var hero: some View {
+        let nx = PrayerTimes.next(after: app.now, city: app.city)
+        let t = PrayerTimes.compute(for: app.now, city: app.city)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: app.skin.symbol).symbolRenderingMode(.multicolor).font(.system(size: 15))
+                Text("\(greeting) · \(AR.hijriString(app.now))").rawhText(14.5, .medium)
+            }
+            .foregroundStyle(app.skin.sub)
+            .contentTransition(.opacity)
+
+            Text("\(PrayerTimes.names[nx.key] ?? "") \(AR.timeF.string(from: nx.date))")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(app.skin.text)
+
+            TimelineView(.periodic(from: .now, by: 1)) { tl in
+                let secs = nx.date.timeIntervalSince(tl.date)
+                Text(Self.clock(secs))
+                    .font(.system(size: 64, weight: .thin, design: .rounded).monospacedDigit())
+                    .foregroundStyle(app.skin.text)
+                    .contentTransition(.numericText(countsDown: true))
+                    .animation(.snappy, value: Int(secs))
+                    .minimumScaleFactor(0.6).lineLimit(1)
+                    .shadow(color: .black.opacity(0.15), radius: 10, y: 3)
+            }
+            Text("متبقي على صلاة \(PrayerTimes.names[nx.key] ?? "")").rawhText(13.5).foregroundStyle(app.skin.sub)
+
+            SunPathView(times: t, now: app.now)
+                .frame(height: 70)
+                .padding(.top, 4)
+
+            HStack {
+                Label(AR.dayF.string(from: app.now), systemImage: MoonPhase.today)
+                    .rawhText(12.5).foregroundStyle(app.skin.sub)
+                Spacer()
+                liveButton
+            }
+        }
+        .padding(.top, 8)
+    }
+
+    private var liveButton: some View {
+        Button {
+            liveTick += 1
+            if liveOn { PrayerLive.stop(); liveOn = false } else { PrayerLive.start(city: app.city); liveOn = true }
+        } label: {
+            Label(liveOn ? "على شاشة القفل" : "شاشة القفل", systemImage: liveOn ? "lock.iphone" : "iphone.badge.play")
+                .rawhText(12.5, .semibold)
+                .foregroundStyle(liveOn ? app.skin.onGold : app.skin.text)
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .glassCapsule(skin: app.skin, tint: liveOn ? app.skin.gold : nil, fallback: liveOn ? app.skin.gold : nil)
+                .symbolEffect(.bounce, value: liveTick)
+        }
+        .buttonStyle(.plain)
+        .sensoryFeedback(.success, trigger: liveTick)
+        .opacity(PrayerLive.enabled ? 1 : 0.4)
+        .disabled(!PrayerLive.enabled)
+    }
+
+    // MARK: شريط المواقيت
+
+    private var prayerStrip: some View {
+        let t = PrayerTimes.compute(for: app.now, city: app.city)
+        let nx = PrayerTimes.next(after: app.now, city: app.city)
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(PrayerTimes.keys, id: \.self) { k in
+                    let isNext = k == nx.key
+                    let passed = t.date(k, on: app.now) < app.now && !isNext
+                    VStack(spacing: 7) {
+                        Image(systemName: PrayerTimes.symbols[k] ?? "sun.max")
+                            .font(.system(size: 18, weight: .medium))
+                            .symbolRenderingMode(isNext ? .monochrome : .hierarchical)
+                            .foregroundStyle(isNext ? app.skin.onGold : app.skin.text)
+                            .breathing(isNext)
+                            .frame(height: 22)
+                        Text(PrayerTimes.names[k] ?? "").rawhText(13, .semibold)
+                            .foregroundStyle(isNext ? app.skin.onGold : app.skin.sub)
+                        Text(AR.timeF.string(from: t.date(k, on: app.now)))
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundStyle(isNext ? app.skin.onGold : app.skin.text)
+                            .lineLimit(1)
+                    }
+                    .frame(width: 78)
+                    .padding(.vertical, 14)
+                    .background {
+                        if isNext {
+                            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                .fill(LinearGradient(colors: [app.skin.goldLight, app.skin.gold], startPoint: .top, endPoint: .bottom))
+                                .shadow(color: app.skin.gold.opacity(0.5), radius: 12, y: 4)
+                        }
+                    }
+                    .surface(22, skin: app.skin, tint: isNext ? Color.clear : nil)
+                    .opacity(passed ? 0.62 : 1)
+                }
+            }
+            .padding(.vertical, 6)
+        }
+        .scrollClipDisabled()
+    }
+
+    // MARK: وِرد الوقت
+
+    private var wirdCard: some View {
+        let id = PrayerTimes.currentWird(now: app.now, city: app.city)
+        let cat = DB.cat(id) ?? DB.cats[0]
+        let p = app.progress(cat)
+        let left = cat.items.count - app.doneCount(cat)
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 14) {
+                CategoryIcon(ic: cat.ic, size: 54)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("وِردك الآن").rawhText(13, .semibold).foregroundStyle(app.skin.gold)
+                    Text(cat.t).font(.system(size: 24, weight: .bold)).foregroundStyle(app.skin.text)
+                    Text(p >= 1 ? "أتممت الوِرد، تقبّل الله منك" : "بقي \(AR.n(left)) من \(AR.n(cat.items.count))")
+                        .rawhText(13.5).foregroundStyle(app.skin.sub)
+                        .contentTransition(.numericText())
+                }
+                Spacer(minLength: 0)
+                ZStack {
+                    ProgressRing(progress: p, color: app.skin.gold, track: .white.opacity(0.15), width: 6)
+                    Text("\(AR.n(Int((p * 100).rounded())))٪").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(app.skin.text)
+                }
+                .frame(width: 56, height: 56)
+            }
+            HStack(spacing: 10) {
+                Button { focus = false; reader = cat } label: {
+                    Label(p > 0 && p < 1 ? "أكمل" : "ابدأ", systemImage: "play.fill").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GoldButtonStyle(skin: app.skin))
+                Button { focus = true; reader = cat } label: {
+                    Label("خلوة", systemImage: "moon.zzz.fill")
+                }
+                .buttonStyle(GhostButtonStyle(skin: app.skin))
+            }
+        }
+        .padding(18)
+        .surface(28, skin: app.skin, highlight: true)
+    }
+
+    // MARK: اختصارات
+
+    private var quickActions: some View {
+        HStack(spacing: 10) {
+            quick("القبلة", "location.north.circle.fill") { path.append(.qibla) }
+            quick("صلواتي", "checkmark.seal.fill") { path.append(.prayers) }
+            quick("الختمة", "book.pages.fill") { path.append(.khatma) }
+            quick("المواقيت", "tablecells.fill") { path.append(.times) }
+        }
+    }
+
+    private func quick(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Medallion(symbol: symbol, size: 44)
+                Text(title).rawhText(12.5, .semibold).foregroundStyle(app.skin.text).lineLimit(1).minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .surface(22, skin: app.skin)
+        }
+        .buttonStyle(PressScale())
+    }
+
+    // MARK: آية اليوم
+
+    private var verseCard: some View {
+        let list = DB.data.verses
+        let day = AR.gregorian.ordinality(of: .day, in: .year, for: app.now) ?? 0
+        let v = list[day % max(1, list.count)]
+        return VStack(spacing: 14) {
+            HStack {
+                Label("آية اليوم", systemImage: "sparkles").rawhText(13, .semibold).foregroundStyle(app.skin.gold)
+                Spacer()
+                Text(v.r).rawhText(12.5).foregroundStyle(app.skin.sub)
+            }
+            Text("﴿ \(v.t) ﴾")
+                .font(app.quranFont.font(23 * app.s.textScale))
+                .multilineTextAlignment(.center)
+                .lineSpacing(app.quranFont.spacing)
+                .foregroundStyle(app.skin.text)
+                .frame(maxWidth: .infinity)
+        }
+        .padding(20)
+        .surface(28, skin: app.skin)
+    }
 
     private var greeting: String {
         let h = AR.gregorian.component(.hour, from: app.now)
@@ -2048,181 +2207,6 @@ struct HomeView: View {
         if h < 12 { return "صباح الخير" }
         if h < 17 { return "طاب يومك" }
         return "مساء الخير"
-    }
-
-    // شريط علوي: الهلال والتاريخ، والبحث والإعدادات
-    private var header: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: MoonPhase.today).font(.system(size: 19)).foregroundStyle(app.skin.gold)
-                    .symbolRenderingMode(.hierarchical)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(AR.hijriString(app.now)).rawhText(13, .bold).foregroundStyle(app.skin.text)
-                    Text(AR.dayF.string(from: app.now)).rawhText(11.5).foregroundStyle(app.skin.sub)
-                }
-            }
-            Spacer()
-            IconButton(symbol: "magnifyingglass") { showSearch = true }
-            IconButton(symbol: "slider.horizontal.3") { showSettings = true }
-        }
-        .padding(.top, 6)
-    }
-
-    // واجهة الكتاب: الشعار والاسم والتحية
-    private var masthead: some View {
-        HStack(spacing: 16) {
-            Emblem(size: 92)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(greeting).rawhText(14, .semibold).foregroundStyle(app.skin.rubric)
-                ShimmerText(text: "رَوْح", size: 40, base: app.skin.text, shine: app.skin.goldLight)
-                Text("ذِكرٌ تطمئن به القلوب").rawhText(13).foregroundStyle(app.skin.sub)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 18).padding(.vertical, 18)
-        .background(GildedGlow().clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous)))
-        .surface(26, skin: app.skin, highlight: true, tint: .clear)
-    }
-
-    // وِرد الوقت: صفحة مذهّبة ونافذة محراب فيها التقدّم
-    private var wirdCard: some View {
-        let id = PrayerTimes.currentWird(now: app.now, city: app.city)
-        let cat = DB.cat(id) ?? DB.cats[0]
-        let p = app.progress(cat)
-        let left = cat.items.count - app.doneCount(cat)
-        return VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("وِردك الآن").rawhText(13, .bold).foregroundStyle(app.skin.rubric)
-                    Text(cat.t).rawhText(30, .bold).foregroundStyle(app.skin.text)
-                    Text(p >= 1 ? "أتممت الوِرد، تقبّل الله منك" : "\(cat.d) · بقي \(AR.n(left)) من \(AR.n(cat.items.count))")
-                        .rawhText(13).foregroundStyle(app.skin.sub)
-                }
-                Spacer(minLength: 0)
-                ZStack {
-                    ArchShape(shoulder: 0.36)
-                        .fill(LinearGradient(colors: [app.skin.lapisLight.opacity(app.skin.isLight ? 1 : 0.6), app.skin.lapis], startPoint: .top, endPoint: .bottom))
-                    ArchShape(shoulder: 0.36).stroke(app.skin.gold, lineWidth: 1.4)
-                    ArchShape(shoulder: 0.36).stroke(app.skin.goldLight.opacity(0.5), lineWidth: 0.6).padding(4)
-                    VStack(spacing: 6) {
-                        ZStack {
-                            ProgressRing(progress: p, color: app.skin.goldLight, track: app.skin.goldLight.opacity(0.2), width: 5)
-                            Image(systemName: p >= 1 ? "checkmark" : CategoryIcon.symbol(cat.ic))
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(app.skin.goldLight)
-                                .contentTransition(.symbolEffect(.replace))
-                        }
-                        .frame(width: 50, height: 50)
-                        Text("\(AR.n(Int((p * 100).rounded())))٪").rawhText(12, .bold).foregroundStyle(app.skin.goldLight)
-                    }
-                    .padding(.top, 18)
-                }
-                .frame(width: 92, height: 120)
-                .shadow(color: app.skin.shadow, radius: 6, y: 3)
-            }
-            // مسطرة التقدّم
-            GeometryReader { g in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(app.skin.gold.opacity(0.15))
-                    Capsule().fill(LinearGradient(colors: [app.skin.goldLight, app.skin.gold], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(6, g.size.width * p))
-                    HStack(spacing: 0) {
-                        Color.clear.frame(width: max(0, g.size.width * p - 6))
-                        Rosette(size: 12)
-                        Spacer(minLength: 0)
-                    }
-                }
-            }
-            .frame(height: 12)
-            .environment(\.layoutDirection, .rightToLeft)
-            HStack(spacing: 10) {
-                Button { openedFromGrid = false; focus = false; reader = cat } label: {
-                    Label(p > 0 && p < 1 ? "أكمل الوِرد" : "ابدأ الوِرد", systemImage: "chevron.left")
-                }
-                .buttonStyle(GoldButtonStyle(skin: app.skin))
-                Button { openedFromGrid = false; focus = true; reader = cat } label: {
-                    Label("الخلوة", systemImage: "smallcircle.filled.circle")
-                }
-                .buttonStyle(GhostButtonStyle(skin: app.skin))
-            }
-        }
-        .padding(20)
-        .surface(26, skin: app.skin, highlight: true)
-    }
-
-    private var prayerCard: some View {
-        let t = PrayerTimes.compute(for: app.now, city: app.city)
-        let nx = PrayerTimes.next(after: app.now, city: app.city)
-        return Card {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("مواقيت الصلاة").rawhText(13, .bold).foregroundStyle(app.skin.rubric)
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(PrayerTimes.names[nx.key] ?? "").rawhText(24, .bold).foregroundStyle(app.skin.text)
-                            TimelineView(.periodic(from: .now, by: 1)) { tl in
-                                Text(Self.clock(nx.date.timeIntervalSince(tl.date)))
-                                    .font(.system(size: 15, weight: .semibold).monospacedDigit())
-                                    .foregroundStyle(app.skin.gold)
-                                    .contentTransition(.numericText(countsDown: true))
-                                    .animation(.snappy, value: Int(nx.date.timeIntervalSince(tl.date)))
-                            }
-                        }
-                    }
-                    Spacer()
-                    Button { showCity = true } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "mappin.and.ellipse")
-                            Text(app.city.n).rawhText(13, .semibold)
-                        }
-                        .foregroundStyle(app.skin.gold)
-                        .padding(.horizontal, 12).padding(.vertical, 7)
-                        .glassCapsule(skin: app.skin, tint: app.skin.gold.opacity(0.25), fallback: app.skin.gold.opacity(0.12))
-                    }
-                    .buttonStyle(.plain)
-                }
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                    ForEach(PrayerTimes.keys, id: \.self) { k in
-                        let isNext = k == nx.key
-                        VStack(spacing: 5) {
-                            Image(systemName: PrayerTimes.symbols[k] ?? "sun.max")
-                                .font(.system(size: 18, weight: .medium))
-                                .symbolRenderingMode(.hierarchical)
-                                .foregroundStyle(isNext ? app.skin.goldLight : app.skin.lapis)
-                                .breathing(isNext)
-                                .frame(height: 22)
-                            Text(PrayerTimes.names[k] ?? "").rawhText(12.5, .semibold).foregroundStyle(isNext ? app.skin.goldLight : app.skin.sub)
-                            Text(AR.timeF.string(from: t.date(k, on: app.now))).rawhText(14, .bold).foregroundStyle(isNext ? Color.white : app.skin.text)
-                                .lineLimit(1).minimumScaleFactor(0.7)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 20).padding(.bottom, 10)
-                        .background(ArchShape(shoulder: 0.3).fill(isNext ? AnyShapeStyle(LinearGradient(colors: [app.skin.lapisLight.opacity(app.skin.isLight ? 1 : 0.6), app.skin.lapis], startPoint: .top, endPoint: .bottom)) : AnyShapeStyle(app.skin.gold.opacity(0.06))))
-                        .overlay(ArchShape(shoulder: 0.3).stroke(app.skin.gold.opacity(isNext ? 1 : 0.45), lineWidth: isNext ? 1.3 : 0.8))
-                    }
-                }
-                SunPathView(times: t, now: app.now)
-                HStack {
-                    Text("بتقويم أم القرى").rawhText(11).foregroundStyle(app.skin.sub.opacity(0.8))
-                    Spacer()
-                    Button {
-                        liveTick += 1
-                        if liveOn { PrayerLive.stop(); liveOn = false } else { PrayerLive.start(city: app.city); liveOn = true }
-                    } label: {
-                        Label(liveOn ? "على شاشة القفل" : "تابع على شاشة القفل", systemImage: liveOn ? "lock.iphone" : "iphone.badge.play")
-                            .rawhText(12, .semibold)
-                            .foregroundStyle(liveOn ? app.skin.onGold : app.skin.gold)
-                            .padding(.horizontal, 12).padding(.vertical, 7)
-                            .glassCapsule(skin: app.skin, tint: liveOn ? app.skin.gold : nil, fallback: liveOn ? app.skin.gold : app.skin.gold.opacity(0.12))
-                            .symbolEffect(.bounce, value: liveTick)
-                    }
-                    .buttonStyle(.plain)
-                    .sensoryFeedback(.success, trigger: liveTick)
-                    .opacity(PrayerLive.enabled ? 1 : 0.4)
-                    .disabled(!PrayerLive.enabled)
-                }
-            }
-        }
     }
 
     /// عدّ تنازلي ساعات:دقائق:ثواني بالأرقام العربية
@@ -2239,58 +2223,138 @@ struct HomeView: View {
         if h > 0 { return "بعد \(AR.n(h)) س \(AR.n(mm)) د" }
         return "بعد \(AR.n(mm)) دقيقة"
     }
-
-    private var verseCard: some View {
-        let list = DB.data.verses
-        let day = AR.gregorian.ordinality(of: .day, in: .year, for: app.now) ?? 0
-        let v = list[day % max(1, list.count)]
-        return Card(padding: 22, highlight: true) {
-            VStack(spacing: 12) {
-                Text("آية اليوم").rawhText(12.5, .bold).foregroundStyle(app.skin.rubric)
-                Ornament()
-                Text("﴿ \(v.t) ﴾")
-                    .rawhText(21 * app.s.textScale, .medium)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(8)
-                    .foregroundStyle(app.skin.text)
-                    .frame(maxWidth: .infinity)
-                Text(v.r).rawhText(12).foregroundStyle(app.skin.gold)
-            }
-            .padding(.vertical, 6)
-        }
-    }
 }
 
+/// مربع القسم (في مكتبة الأذكار)
 struct CategoryTile: View {
     @EnvironmentObject var app: AppState
     var cat: AdhkarCategory
     var body: some View {
         let p = app.progress(cat)
-        VStack(spacing: 9) {
-            ZStack(alignment: .topTrailing) {
-                CategoryIcon(ic: cat.ic, size: 50)
-                if p >= 1 {
-                    Image(systemName: "checkmark.seal.fill").foregroundStyle(app.skin.green).font(.system(size: 17))
-                        .background(Circle().fill(app.skin.card).padding(2))
-                        .offset(x: 6, y: -4)
-                        .transition(.scale.combined(with: .opacity))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                CategoryIcon(ic: cat.ic, size: 46)
+                Spacer()
+                ZStack {
+                    ProgressRing(progress: p, color: p >= 1 ? app.skin.green : app.skin.gold, track: .white.opacity(0.14), width: 3.5)
+                    if p >= 1 {
+                        Image(systemName: "checkmark").font(.system(size: 11, weight: .heavy)).foregroundStyle(app.skin.green)
+                            .transition(.scale.combined(with: .opacity))
+                    }
                 }
+                .frame(width: 28, height: 28)
             }
-            Text(cat.t).rawhText(15.5, .bold).foregroundStyle(app.skin.text).lineLimit(1).minimumScaleFactor(0.8)
-            Text(cat.d).rawhText(11.5).foregroundStyle(app.skin.sub).lineLimit(1)
-            GeometryReader { g in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(app.skin.gold.opacity(0.15))
-                    Capsule().fill(app.skin.gold).frame(width: max(4, g.size.width * p))
-                }
-            }
-            .frame(height: 3)
-            .environment(\.layoutDirection, .rightToLeft)
-            .padding(.horizontal, 6)
+            Text(cat.t).rawhText(16.5, .bold).foregroundStyle(app.skin.text).lineLimit(1).minimumScaleFactor(0.8)
+            Text(cat.d).rawhText(12.5).foregroundStyle(app.skin.sub).lineLimit(1)
         }
-        .padding(.horizontal, 12).padding(.vertical, 16)
-        .frame(maxWidth: .infinity)
-        .surface(20, skin: app.skin)
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .surface(24, skin: app.skin)
+    }
+}
+
+// MARK: - الأذكار (المكتبة)
+
+enum AdhkarRoute: Hashable { case names, duas, favorites, occasions }
+
+struct AdhkarLibraryView: View {
+    @EnvironmentObject var app: AppState
+    @State private var reader: AdhkarCategory? = nil
+    @State private var showSearch = false
+    @State private var path: [AdhkarRoute] = []
+    @Namespace private var zoom
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            ZStack {
+                ScreenBackground()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        HStack(alignment: .bottom) {
+                            Unwan(title: "الأذكار", subtitle: "من حصن المسلم، مع عدّاد لكل ذكر")
+                            IconButton(symbol: "magnifyingglass") { showSearch = true }
+                        }
+                        .padding(.top, 14)
+                        .reveal(0)
+
+                        todaySummary.reveal(1)
+
+                        SectionTitle(title: "أذكار اليوم والليلة", trailing: "\(AR.n(DB.cats.count)) أقسام").reveal(2)
+                        LazyVGrid(columns: RawhGrid.adaptive(150), spacing: 12) {
+                            ForEach(Array(DB.cats.enumerated()), id: \.element.id) { i, c in
+                                Button { reader = c } label: { CategoryTile(cat: c) }
+                                    .buttonStyle(PressScale())
+                                    .zoomSource(c.id, in: zoom)
+                                    .reveal(3 + i)
+                            }
+                        }
+
+                        SectionTitle(title: "مكتبتي").reveal(4)
+                        LazyVGrid(columns: RawhGrid.adaptive(150), spacing: 12) {
+                            libraryTile("المحفوظة", "\(AR.n(app.s.favorites.count)) ذكرًا", "bookmark.fill") { path.append(.favorites) }
+                            libraryTile("أدعية من القرآن", "\(AR.n(DB.data.duas.count)) دعاءً", "hands.and.sparkles.fill") { path.append(.duas) }
+                            libraryTile("أسماء الله الحسنى", "تسعة وتسعون اسمًا", "sparkles") { path.append(.names) }
+                            libraryTile("المناسبات", "الأيام الفاضلة", "moon.circle.fill") { path.append(.occasions) }
+                        }
+                        .reveal(5)
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 36)
+                    .readableWidth()
+                }
+                .scrollIndicators(.hidden)
+            }
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: AdhkarRoute.self) { r in
+                switch r {
+                case .names: NamesView()
+                case .duas: DuasView()
+                case .favorites: FavoritesView()
+                case .occasions: OccasionsView()
+                }
+            }
+            .sheet(isPresented: $showSearch) { SearchView().environmentObject(app).rawhSheet(app.skin) }
+            .fullScreenCover(item: $reader) { c in
+                ReaderView(cat: c).environmentObject(app).zoomDestination(c.id, in: zoom)
+            }
+        }
+    }
+
+    /// ملخص اليوم: كم قسمًا أتممت
+    private var todaySummary: some View {
+        let done = DB.cats.filter { app.progress($0) >= 1 }.count
+        let p = Double(done) / Double(max(1, DB.cats.count))
+        return HStack(spacing: 16) {
+            ZStack {
+                ProgressRing(progress: p, color: app.skin.gold, track: .white.opacity(0.15), width: 7)
+                Text("\(AR.n(done))/\(AR.n(DB.cats.count))").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(app.skin.text)
+            }
+            .frame(width: 66, height: 66)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(done == DB.cats.count ? "أتممت أذكار اليوم كلها" : "أقسام أتممتها اليوم").rawhText(16, .bold).foregroundStyle(app.skin.text)
+                Text("\(AR.n(app.todayCount)) ذكرًا وتسبيحة اليوم · \(AR.n(app.streak)) يوم متتالي").rawhText(13).foregroundStyle(app.skin.sub)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .surface(26, skin: app.skin, highlight: true)
+    }
+
+    private func libraryTile(_ t: String, _ d: String, _ symbol: String, _ go: @escaping () -> Void) -> some View {
+        Button(action: go) {
+            HStack(spacing: 12) {
+                Medallion(symbol: symbol, size: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(t).rawhText(14.5, .bold).foregroundStyle(app.skin.text).lineLimit(1).minimumScaleFactor(0.8)
+                    Text(d).rawhText(12).foregroundStyle(app.skin.sub).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .surface(22, skin: app.skin)
+        }
+        .buttonStyle(PressScale())
     }
 }
 
@@ -3581,8 +3645,13 @@ struct BeadRing: View {
 
 struct StatsView: View {
     @EnvironmentObject var app: AppState
+    var embedded = false
     var body: some View {
-        NavigationStack {
+        if embedded { content.navigationBarTitleDisplayMode(.inline) }
+        else { NavigationStack { content.toolbar(.hidden, for: .navigationBar) } }
+    }
+
+    private var content: some View {
             ZStack {
                 ScreenBackground()
                 ScrollView {
@@ -3633,8 +3702,6 @@ struct StatsView: View {
                     .readableWidth()
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
-        }
     }
 
     private func tile(_ symbol: String, _ label: String, _ v: Int, breathe: Bool = false) -> some View {
@@ -3687,7 +3754,7 @@ struct Heatmap: View {
 
 // MARK: - المزيد
 
-enum MoreRoute: Hashable { case names, duas, occasions, reminders, qibla, favorites, prayers, khatma, calendar, zakat, times, badges, backup, customize }
+enum MoreRoute: Hashable { case names, duas, occasions, reminders, qibla, favorites, prayers, khatma, calendar, zakat, times, badges, backup, customize, stats }
 
 struct MoreView: View {
     @EnvironmentObject var app: AppState
@@ -3700,53 +3767,40 @@ struct MoreView: View {
             ZStack {
                 ScreenBackground()
                 ScrollView {
-                    VStack(spacing: 16) {
-                        Unwan(title: "المزيد", subtitle: "كل ما يعينك على يومك مع الله، في مكان واحد")
-                            .padding(.top, 12)
-
-                        group("عبادتي") {
-                            hub("صلواتي", "\(AR.n(app.prayedCount())) من ٥ اليوم · \(AR.n(app.prayerStreak)) يوم متتالي", symbol: "checkmark.seal.fill") { path.append(.prayers) }
-                            hub("ختمة القرآن", app.s.khatmaStart.isEmpty ? "خطة يومية لختم المصحف" : "صفحة \(AR.n(app.s.khatmaPage)) من ٦٠٤", symbol: "book.pages.fill") { path.append(.khatma) }
-                            hub("التقويم الهجري", AR.hijriString(app.now), symbol: "calendar") { path.append(.calendar) }
-                            hub("حاسبة الزكاة", "النصاب وربع العشر بسهولة", symbol: "banknote.fill") { path.append(.zakat) }
-                            hub("الأوسمة", "\(AR.n(app.badges.filter { $0.progress >= 1 }.count)) من \(AR.n(app.badges.count)) وسامًا", symbol: "medal.fill") { path.append(.badges) }
-                            hub("جدول المواقيت", "مواقيت الشهر كاملًا لمدينتك", symbol: "tablecells.fill") { path.append(.times) }
-                        }
-                        group("أذكار وأدعية") {
-                            hub("أسماء الله الحسنى", "تسعة وتسعون اسمًا", custom: AnyView(EightStar().stroke(app.skin.goldLight, lineWidth: 1.6).frame(width: 24, height: 24))) { path.append(.names) }
-                            hub("أدعية من القرآن", "\(AR.n(DB.data.duas.count)) دعاءً بنص المصحف", symbol: "hands.and.sparkles.fill") { path.append(.duas) }
-                            hub("المحفوظة", "\(AR.n(app.s.favorites.count)) ذكرًا محفوظًا", symbol: "bookmark.fill") { path.append(.favorites) }
-                            hub("المناسبات الإسلامية", "رمضان والأعياد والأيام الفاضلة", symbol: "moon.circle.fill") { path.append(.occasions) }
-                        }
-                        group("أدوات") {
-                            hub("التذكيرات", "إشعارات بالأذكار والصلاة والصيام", symbol: "bell.fill", wiggle: true) { path.append(.reminders) }
-                            hub("اتجاه القبلة", "بوصلة تتوجه حين تتجه", symbol: "location.north.circle.fill") { path.append(.qibla) }
-                            hub("التخصيص", "المظهر التلقائي وأقسام الرئيسية والخط", symbol: "wand.and.stars") { path.append(.customize) }
-                            hub("المظهر والإعدادات", "الألوان والخط والمدينة", symbol: "paintpalette.fill") { showSettings = true }
-                            hub("النسخ الاحتياطي", "صدّر تقدّمك واسترجعه", symbol: "externaldrive.fill") { path.append(.backup) }
-                            hub("المقدمة", "شاهد التعريف بالتطبيق", symbol: "play.fill") { showIntro = true }
-                        }
-
-                        Card {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack { Image(systemName: "apps.iphone").foregroundStyle(app.skin.gold); Text("الودجت و Siri").rawhText(15, .bold).foregroundStyle(app.skin.text) }
-                                Text("أضف ودجت «الصلاة القادمة» أو «ذكر الساعة» من الشاشة الرئيسية أو شاشة القفل: اضغط مطوّلًا ← تعديل ← إضافة أداة ← رَوْح.\nوقل لـ Siri: «أذكار الصباح في رَوْح» أو «كم باقي على الصلاة في رَوْح».")
-                                    .rawhText(13).foregroundStyle(app.skin.sub).lineSpacing(5)
-                            }
-                        }
-
-                        Card {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack { Image(systemName: "book.closed.fill").foregroundStyle(app.skin.gold); Text("المصادر").rawhText(15, .bold).foregroundStyle(app.skin.text) }
-                                Text("الأذكار مرتّبة على «حصن المسلم» مع تخريج كل ذكر. نص المصحف بالرسم العثماني والتلاوة بصوت الشيخ مشاري العفاسي. المواقيت بطريقة أم القرى.")
-                                    .rawhText(13).foregroundStyle(app.skin.sub).lineSpacing(5)
-                            }
-                        }
+                    VStack(alignment: .leading, spacing: 22) {
+                        Unwan(title: "المزيد", subtitle: "عباداتك وأدواتك وإعداداتك")
+                            .padding(.top, 14)
+                            .reveal(0)
+                        profileCard.reveal(1)
+                        group("عبادتي", 2, [
+                            RowItem("صلواتي", "\(AR.n(app.prayedCount())) من ٥ اليوم", "checkmark.seal.fill") { path.append(.prayers) },
+                            RowItem("ختمة القرآن", app.s.khatmaStart.isEmpty ? "ابدأ خطة لختم المصحف" : "صفحة \(AR.n(app.s.khatmaPage)) من ٦٠٤", "book.pages.fill") { path.append(.khatma) },
+                            RowItem("إنجازي", "\(AR.n(app.todayCount)) ذكرًا اليوم", "chart.bar.fill") { path.append(.stats) },
+                            RowItem("الأوسمة", "\(AR.n(app.badges.filter { $0.progress >= 1 }.count)) من \(AR.n(app.badges.count))", "medal.fill") { path.append(.badges) }
+                        ])
+                        group("أدوات", 3, [
+                            RowItem("اتجاه القبلة", "بوصلة تتجه نحو الكعبة", "location.north.circle.fill") { path.append(.qibla) },
+                            RowItem("التقويم الهجري", AR.hijriString(app.now), "calendar") { path.append(.calendar) },
+                            RowItem("جدول المواقيت", "مواقيت الشهر لمدينتك", "tablecells.fill") { path.append(.times) },
+                            RowItem("حاسبة الزكاة", "النصاب وربع العشر", "banknote.fill") { path.append(.zakat) },
+                            RowItem("المناسبات", "رمضان والأعياد والأيام الفاضلة", "moon.circle.fill") { path.append(.occasions) }
+                        ])
+                        group("التطبيق", 4, [
+                            RowItem("التذكيرات والأصوات", "إشعارات تنطق بالذكر", "bell.badge.fill") { path.append(.reminders) },
+                            RowItem("التخصيص", "السماء والرئيسية والخط", "wand.and.stars") { path.append(.customize) },
+                            RowItem("الإعدادات", "المدينة والأيقونة وحجم الخط", "gearshape.fill") { showSettings = true },
+                            RowItem("النسخ الاحتياطي", "صدّر تقدّمك واسترجعه", "externaldrive.fill") { path.append(.backup) },
+                            RowItem("المقدمة", "تعرّف على رَوْح", "play.circle.fill") { showIntro = true }
+                        ])
+                        Text("رَوْح · ذِكرٌ تطمئن به القلوب")
+                            .rawhText(12).foregroundStyle(app.skin.sub)
+                            .frame(maxWidth: .infinity)
                     }
                     .padding(.horizontal, 18)
                     .padding(.bottom, 30)
                     .readableWidth()
                 }
+                .scrollIndicators(.hidden)
             }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: MoreRoute.self) { r in
@@ -3766,6 +3820,7 @@ struct MoreView: View {
                     case .badges: BadgesView()
                     case .backup: BackupView()
                     case .customize: CustomizeView()
+                    case .stats: StatsView(embedded: true)
                     }
                 }
                 .environmentObject(app)
@@ -3775,52 +3830,88 @@ struct MoreView: View {
         }
     }
 
-    private func group<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionTitle(title: title)
-            LazyVGrid(columns: RawhGrid.adaptive(150), spacing: 12) { content() }
+    /// بطاقة اليوم: سلسلة الوِرد والصلوات
+    private var profileCard: some View {
+        HStack(spacing: 0) {
+            stat("\(AR.n(app.streak))", "يوم ذِكر", "flame.fill")
+            Rectangle().fill(app.skin.line).frame(width: 0.7, height: 40)
+            stat("\(AR.n(app.prayerStreak))", "يوم صلوات", "checkmark.seal.fill")
+            Rectangle().fill(app.skin.line).frame(width: 0.7, height: 40)
+            stat("\(AR.n(app.totalCount))", "ذكرًا", "sparkles")
         }
+        .padding(.vertical, 16)
+        .surface(24, skin: app.skin, highlight: true)
     }
 
-    private func hub(_ t: String, _ d: String, symbol: String = "", custom: AnyView? = nil, wiggle: Bool = false, _ go: @escaping () -> Void) -> some View {
-        HubTile(title: t, detail: d, symbol: symbol, custom: custom, wiggleIt: wiggle, go: go)
+    private func stat(_ v: String, _ t: String, _ sym: String) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: sym).font(.system(size: 14, weight: .semibold)).foregroundStyle(app.skin.gold)
+            Text(v).font(.system(size: 24, weight: .bold, design: .rounded)).foregroundStyle(app.skin.text)
+                .lineLimit(1).minimumScaleFactor(0.6).contentTransition(.numericText())
+            Text(t).rawhText(12).foregroundStyle(app.skin.sub)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func group(_ title: String, _ index: Int, _ rows: [RowItem]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionTitle(title: title)
+            VStack(spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { i, r in
+                    if i > 0 { Rectangle().fill(Color.white.opacity(0.14)).frame(height: 0.6).padding(.leading, 66) }
+                    HubRow(title: r.title, detail: r.detail, symbol: r.symbol, go: r.go)
+                }
+            }
+            .surface(24, skin: app.skin)
+        }
+        .reveal(index)
     }
 }
 
-struct HubTile: View {
+struct RowItem {
+    let title: String
+    let detail: String
+    let symbol: String
+    let go: () -> Void
+    init(_ title: String, _ detail: String, _ symbol: String, _ go: @escaping () -> Void) {
+        self.title = title; self.detail = detail; self.symbol = symbol; self.go = go
+    }
+}
+
+/// صف في قائمة المزيد: أيقونة ملوّنة، عنوان، وصف، وسهم
+struct HubRow: View {
     @EnvironmentObject var app: AppState
     var title: String
     var detail: String
     var symbol: String
-    var custom: AnyView?
-    var wiggleIt: Bool
     var go: () -> Void
     @State private var t = 0
     var body: some View {
-        Button { t += 1; DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { go() } } label: {
-            VStack(alignment: .leading, spacing: 10) {
-                ZStack {
-                    Circle().fill(LinearGradient(colors: [app.skin.goldLight, app.skin.gold], startPoint: .top, endPoint: .bottom))
-                    Circle().fill(LinearGradient(colors: [app.skin.lapisLight.opacity(app.skin.isLight ? 1 : 0.7), app.skin.lapis], startPoint: .top, endPoint: .bottom)).padding(3)
-                    Circle().strokeBorder(app.skin.goldLight.opacity(0.5), lineWidth: 0.6).padding(6)
-                    if let custom { custom.foregroundStyle(app.skin.goldLight) }
-                    else if wiggleIt {
-                        Image(systemName: symbol).font(.system(size: 19, weight: .medium)).foregroundStyle(app.skin.goldLight).wiggle(on: t)
-                    } else {
-                        Image(systemName: symbol).font(.system(size: 19, weight: .medium)).foregroundStyle(app.skin.goldLight).symbolEffect(.bounce, value: t)
-                    }
+        Button { t += 1; go() } label: {
+            HStack(spacing: 14) {
+                Medallion(symbol: symbol, size: 38)
+                    .symbolEffect(.bounce, value: t)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).rawhText(16, .semibold).foregroundStyle(app.skin.text)
+                    Text(detail).rawhText(12.5).foregroundStyle(app.skin.sub).lineLimit(1)
                 }
-                .frame(width: 46, height: 46)
-                .shadow(color: app.skin.shadow, radius: 3, y: 2)
-                Text(title).rawhText(15.5, .bold).foregroundStyle(app.skin.text).lineLimit(1).minimumScaleFactor(0.8)
-                Text(detail).rawhText(12).foregroundStyle(app.skin.sub).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 6)
+                Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold)).foregroundStyle(app.skin.sub.opacity(0.7))
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, minHeight: 140, alignment: .topLeading)
-            .surface(20, skin: app.skin)
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(PressScale())
+        .buttonStyle(RowPress())
         .sensoryFeedback(.selection, trigger: t)
+    }
+}
+
+/// ضغطة الصف: إضاءة خفيفة
+struct RowPress: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(Color.white.opacity(configuration.isPressed ? 0.08 : 0))
+            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
     }
 }
 
@@ -3833,7 +3924,7 @@ struct SubScreen<C: View>: View {
         ZStack {
             ScreenBackground()
             ScrollView {
-                VStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 16) {
                     Unwan(title: title, subtitle: subtitle, compact: true)
                         .padding(.top, 6)
                     content()
@@ -4243,7 +4334,7 @@ struct SearchView: View {
 // اختيار أيقونة التطبيق
 struct AppIconPicker: View {
     @EnvironmentObject var app: AppState
-    @State private var current: AppIconChoice = .emerald
+    @State private var current: AppIconChoice = .night
     @State private var tick = 0
     @State private var failed = false
     var body: some View {
@@ -4292,28 +4383,8 @@ struct SettingsView: View {
                 ScreenBackground()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        SectionTitle(title: "المظهر")
-                        HStack(spacing: 12) {
-                            ForEach(Skin.allCases) { k in
-                                Button { withAnimation(.easeInOut(duration: 0.35)) { app.s.skin = k } } label: {
-                                    VStack(spacing: 8) {
-                                        ZStack {
-                                            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(LinearGradient(colors: [k.bg, k.bg2], startPoint: .top, endPoint: .bottom))
-                                            ArchShape(shoulder: 0.38).stroke(k.gold, lineWidth: 2).frame(width: 34, height: 46)
-                                            StarBurst().fill(k.gold).frame(width: 9, height: 9).offset(y: -30)
-                                        }
-                                        .frame(height: 96)
-                                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(app.s.skin == k ? app.skin.gold : app.skin.line, lineWidth: app.s.skin == k ? 2.5 : 0.8))
-                                        Text(k.name).rawhText(14, .semibold).foregroundStyle(app.skin.text)
-                                        Image(systemName: app.s.skin == k ? "checkmark.circle.fill" : "circle")
-                                            .foregroundStyle(app.s.skin == k ? app.skin.gold : app.skin.sub)
-                                            .contentTransition(.symbolEffect(.replace))
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                                .frame(maxWidth: .infinity)
-                            }
-                        }
+                        SectionTitle(title: "السماء")
+                        SkyPicker()
 
                         SectionTitle(title: "أيقونة التطبيق")
                         AppIconPicker()
@@ -4339,11 +4410,54 @@ struct SettingsView: View {
                     .readableWidth()
                 }
             }
-            .navigationTitle("المظهر والإعدادات")
+            .navigationTitle("الإعدادات")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("تم") { dismiss() }.tint(app.skin.gold) } }
         }
         .preferredColorScheme(app.skin.scheme)
+    }
+}
+
+
+/// اختيار السماء: حيّة تتبع الوقت، أو ثابتة على وقت
+struct SkyPicker: View {
+    @EnvironmentObject var app: AppState
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                swatch(nil)
+                ForEach(Skin.allCases) { k in swatch(k) }
+            }
+            .padding(.vertical, 4)
+        }
+        .scrollClipDisabled()
+        .sensoryFeedback(.selection, trigger: app.s.autoSkin ? "live" : app.s.skin.rawValue)
+    }
+
+    private func swatch(_ k: Skin?) -> some View {
+        let on = k == nil ? app.s.autoSkin : (!app.s.autoSkin && app.s.skin == k)
+        let shown = k ?? Skin.at(app.now, city: app.city)
+        return Button {
+            withAnimation(.easeInOut(duration: 0.6)) {
+                if let k { app.s.autoSkin = false; app.s.skin = k } else { app.s.autoSkin = true }
+            }
+        } label: {
+            VStack(spacing: 8) {
+                ZStack {
+                    SkyBackground(skin: shown, showMoon: false)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    Image(systemName: k == nil ? "wand.and.stars" : shown.symbol)
+                        .symbolRenderingMode(.multicolor)
+                        .font(.system(size: 22))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 72, height: 96)
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(on ? Color.white : Color.white.opacity(0.2), lineWidth: on ? 2.5 : 0.8))
+                .scaleEffect(on ? 1.04 : 1)
+                Text(k?.name ?? "حيّة").rawhText(13, on ? .bold : .medium).foregroundStyle(on ? app.skin.text : app.skin.sub)
+            }
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -5425,15 +5539,13 @@ struct CustomizeView: View {
 
     var body: some View {
         SubScreen(title: "التخصيص", subtitle: "اجعل رَوْح على ذوقك") {
-            SectionTitle(title: "المظهر")
+            SectionTitle(title: "السماء")
             Card {
-                Toggle(isOn: Binding(get: { app.s.autoSkin }, set: { v in withAnimation(.easeInOut(duration: 0.4)) { app.s.autoSkin = v } })) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("مظهر تلقائي حسب الوقت").rawhText(15, .semibold).foregroundStyle(app.skin.text)
-                        Text("عاجي من الفجر إلى المغرب، وحبر بعد المغرب").rawhText(12).foregroundStyle(app.skin.sub)
-                    }
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("السماء الحيّة تتبدّل مع أوقات الصلاة في مدينتك: فجر، ضحى، عصر، مغرب، وليل بنجومه. أو ثبّتها على وقت تحبه.")
+                        .rawhText(13).foregroundStyle(app.skin.sub)
+                    SkyPicker()
                 }
-                .tint(app.skin.gold)
             }
 
             SectionTitle(title: "أقسام الرئيسية")
@@ -5577,7 +5689,7 @@ struct OpenSebhaIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        NotificationRouter.shared.tab = 2
+        NotificationRouter.shared.tab = 3
         return .result()
     }
 }
@@ -6403,15 +6515,15 @@ struct RootView: View {
     var body: some View {
         TabView(selection: $tab) {
             HomeView()
-                .tabItem { Label("الرئيسية", systemImage: "house.fill") }.tag(0)
+                .tabItem { Label("اليوم", systemImage: app.skin.symbol) }.tag(0)
+            AdhkarLibraryView()
+                .tabItem { Label("الأذكار", systemImage: "hands.and.sparkles.fill") }.tag(1)
             QuranView()
-                .tabItem { Label("القرآن", systemImage: "book.fill") }.tag(1)
+                .tabItem { Label("القرآن", systemImage: "book.fill") }.tag(2)
             SebhaView()
-                .tabItem { Label("السبحة", systemImage: "circle.hexagongrid.fill") }.tag(2)
-            StatsView()
-                .tabItem { Label("إنجازي", systemImage: "chart.bar.fill") }.tag(3)
+                .tabItem { Label("السبحة", systemImage: "circle.hexagongrid.fill") }.tag(3)
             MoreView()
-                .tabItem { Label("المزيد", systemImage: "square.grid.2x2.fill") }.tag(4)
+                .tabItem { Label("المزيد", systemImage: "ellipsis.circle.fill") }.tag(4)
         }
         .tint(app.skin.gold)
         .minimizingTabBar()
@@ -6423,7 +6535,7 @@ struct RootView: View {
             styleBars()
             if !app.s.introSeen { showIntro = true } else { VoiceAlerts.prepare { Reminders.requestAndSchedule(app.s) } }
         }
-        .onChange(of: app.s.skin) { _, _ in styleBars() }
+        .onChange(of: app.skin) { _, _ in styleBars() }
         .onChange(of: phase) { _, p in
             if p == .active {
                 app.now = Date(); app.rollDay()
@@ -6574,18 +6686,20 @@ struct PrayerWidgetIntent: WidgetConfigurationIntent {
 // MARK: - ألوان الودجت (لازورد وذهب)
 
 enum WTheme {
-    static let top = Color(hex: 0x24468A)
-    static let bottom = Color(hex: 0x0E1C3D)
-    static let gold = Color(hex: 0xE2C27A)
-    static let text = Color(hex: 0xF8F0DE)
-    static let sub = Color(hex: 0xF8F0DE, opacity: 0.66)
-    static var background: some View {
-        ZStack {
-            LinearGradient(colors: [top, bottom], startPoint: .top, endPoint: .bottom)
-            RadialGradient(colors: [gold.opacity(0.16), .clear], center: .topTrailing, startRadius: 4, endRadius: 220)
-            SixStar().stroke(gold.opacity(0.08), lineWidth: 1.2).frame(width: 190, height: 190).offset(x: 70, y: -40)
+    static let gold = Color(hex: 0xF3D38C)
+    static let text = Color.white
+    static let sub = Color.white.opacity(0.72)
+    /// سماء الوقت (مثل التطبيق): فجر، ضحى، عصر، مغرب، ليل
+    static func sky(_ date: Date, _ city: City) -> some View {
+        let k = Skin.at(date, city: city)
+        return ZStack {
+            LinearGradient(stops: [
+                .init(color: k.bg, location: 0), .init(color: k.mid, location: 0.6), .init(color: k.bg2, location: 1)
+            ], startPoint: .top, endPoint: .bottom)
+            RadialGradient(colors: [k.goldLight.opacity(k == .night ? 0.12 : 0.45), .clear], center: k == .maghrib || k == .fajr ? .bottom : .topTrailing, startRadius: 2, endRadius: 220)
         }
     }
+    static var background: some View { sky(Date(), DB.city("riyadh")) }
 }
 
 // MARK: - ودجت الصلاة القادمة
@@ -6670,10 +6784,10 @@ struct PrayerWidgetView: View {
                     }
                 }
             }
-            .containerBackground(for: .widget) { WTheme.background }
+            .containerBackground(for: .widget) { WTheme.sky(entry.date, entry.city) }
         default:
             nextBlock
-                .containerBackground(for: .widget) { WTheme.background }
+                .containerBackground(for: .widget) { WTheme.sky(entry.date, entry.city) }
         }
     }
 
