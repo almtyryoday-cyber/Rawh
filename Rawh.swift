@@ -100,10 +100,18 @@ enum AR {
     static var gregorian: Calendar { var c = Calendar(identifier: .gregorian); c.timeZone = riyadh; c.locale = locale; return c }
     static var hijri: Calendar { var c = Calendar(identifier: .islamicUmmAlQura); c.timeZone = riyadh; c.locale = locale; return c }
 
+    private static let fmtLock = NSLock()
+    private static var fmtCache: [String: DateFormatter] = [:]
+    /// منسّق تاريخ محفوظ (إنشاء المنسّقات مكلف، فنعيد استخدامها)
     static func fmt(_ pattern: String, hijri: Bool = false) -> DateFormatter {
+        let key = pattern + (hijri ? "|h" : "|g")
+        fmtLock.lock(); defer { fmtLock.unlock() }
+        if let f = fmtCache[key] { return f }
         let f = DateFormatter(); f.locale = locale; f.timeZone = riyadh
         f.calendar = hijri ? AR.hijri : AR.gregorian
-        f.dateFormat = pattern; return f
+        f.dateFormat = pattern
+        fmtCache[key] = f
+        return f
     }
     static let timeF = fmt("h:mm a")
     static let dayF = fmt("EEEE، d MMMM")
@@ -319,7 +327,23 @@ struct PrayerTimes {
         return start.addingTimeInterval(hours(k) * 3600)
     }
 
+    private static let cacheLock = NSLock()
+    private static var cache: [String: PrayerTimes] = [:]
+    /// مواقيت يوم في مدينة (تُحسب مرة وتُحفظ)
     static func compute(for day: Date, city: City) -> PrayerTimes {
+        let key = city.id + "|" + AR.dayKey(day)
+        cacheLock.lock()
+        if let t = cache[key] { cacheLock.unlock(); return t }
+        cacheLock.unlock()
+        let t = computeRaw(for: day, city: city)
+        cacheLock.lock()
+        if cache.count > 400 { cache.removeAll() }
+        cache[key] = t
+        cacheLock.unlock()
+        return t
+    }
+
+    private static func computeRaw(for day: Date, city: City) -> PrayerTimes {
         let cal = AR.gregorian
         let c = cal.dateComponents([.year, .month, .day], from: day)
         let lat = city.lat, lng = city.lng, tz = 3.0
@@ -677,6 +701,7 @@ import UserNotifications
 import ActivityKit
 import AppIntents
 import Security
+import UniformTypeIdentifiers
 
 // MARK: - الحالة المحفوظة
 
@@ -706,6 +731,9 @@ struct Saved: Codable {
     var khatmaCount: Int = 0                // عدد الختمات المكتملة
     var design: Int = 4                     // إصدار التصميم (٤ = المخطوطة المذهّبة)
     var quranFont: String = "amiriQuran"    // خط وضع القراءة
+    var dhikrFont: String = "system"        // خط نص الأذكار
+    var autoSkin: Bool = false              // عاجي نهارًا وحبر ليلًا حسب مواقيت مدينتك
+    var homeHidden: [String] = []           // أقسام الرئيسية المخفية
 
     init() {}
 
@@ -739,6 +767,9 @@ struct Saved: Codable {
         khatmaPage = (try? c.decode(Int.self, forKey: .khatmaPage)) ?? d.khatmaPage
         khatmaCount = (try? c.decode(Int.self, forKey: .khatmaCount)) ?? d.khatmaCount
         quranFont = (try? c.decode(String.self, forKey: .quranFont)) ?? d.quranFont
+        dhikrFont = (try? c.decode(String.self, forKey: .dhikrFont)) ?? d.dhikrFont
+        autoSkin = (try? c.decode(Bool.self, forKey: .autoSkin)) ?? d.autoSkin
+        homeHidden = (try? c.decode([String].self, forKey: .homeHidden)) ?? d.homeHidden
         // أول تشغيل للتصميم الجديد: نبدأ بمظهر المخطوطة العاجي
         design = (try? c.decode(Int.self, forKey: .design)) ?? 0
         if design < 4 { skin = .sand; design = 4 }
@@ -753,6 +784,7 @@ final class AppState: ObservableObject {
 
     init() {
         if let d = UserDefaults.standard.data(forKey: Self.key), let v = try? JSONDecoder().decode(Saved.self, from: d) { s = v } else { s = Saved() }
+        Self.current = self
         rollDay()
         timer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
             DispatchQueue.main.async { self?.now = Date(); self?.rollDay() }
@@ -763,7 +795,16 @@ final class AppState: ObservableObject {
         if let d = try? JSONEncoder().encode(s) { UserDefaults.standard.set(d, forKey: Self.key) }
     }
 
-    var skin: Skin { s.skin }
+    /// المظهر الحالي: الثابت، أو التلقائي (عاجي من الفجر إلى المغرب، وحبر بعده)
+    var skin: Skin {
+        guard s.autoSkin else { return s.skin }
+        let t = PrayerTimes.compute(for: now, city: city)
+        let h = now.timeIntervalSince(AR.gregorian.startOfDay(for: now)) / 3600
+        return (h >= t.fajr && h < t.maghrib) ? .sand : .night
+    }
+    /// النسخة الحية (للاختصارات و Siri)
+    static weak var current: AppState?
+    func shows(_ section: String) -> Bool { !s.homeHidden.contains(section) }
     var city: City { DB.city(s.cityId) }
 
     func rollDay() {
@@ -1670,6 +1711,89 @@ struct SectionTitle: View {
     }
 }
 
+// MARK: - الحركة والتكيّف مع الشاشات
+
+/// ظهور متتابع للعناصر عند فتح الشاشة (ويحترم «تقليل الحركة»)
+struct RevealOnAppear: ViewModifier {
+    var index: Int
+    @Environment(\.accessibilityReduceMotion) private var reduce
+    @State private var shown = false
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown || reduce ? 0 : 22)
+            .scaleEffect(shown || reduce ? 1 : 0.97, anchor: .top)
+            .onAppear {
+                guard !shown else { return }
+                if reduce { shown = true; return }
+                withAnimation(.spring(response: 0.6, dampingFraction: 0.85).delay(0.06 * Double(index))) { shown = true }
+            }
+    }
+}
+
+extension View {
+    func reveal(_ index: Int) -> some View { modifier(RevealOnAppear(index: index)) }
+
+    /// عرض مريح للقراءة على الآيباد والشاشات العريضة
+    func readableWidth(_ max: CGFloat = 720) -> some View {
+        self.frame(maxWidth: max).frame(maxWidth: .infinity)
+    }
+
+    /// انتقال «تكبير» من البطاقة إلى الشاشة (iOS 18)
+    @ViewBuilder func zoomSource<ID: Hashable>(_ id: ID, in ns: Namespace.ID) -> some View {
+        if #available(iOS 18.0, *) { self.matchedTransitionSource(id: id, in: ns) } else { self }
+    }
+    @ViewBuilder func zoomDestination<ID: Hashable>(_ id: ID, in ns: Namespace.ID) -> some View {
+        if #available(iOS 18.0, *) { self.navigationTransition(.zoom(sourceID: id, in: ns)) } else { self }
+    }
+
+    /// حركة خفيفة للرأس مع التمرير (يرتفع ويخفت)
+    func parallaxHeader() -> some View {
+        self.visualEffect { content, proxy in
+            let y = proxy.frame(in: .scrollView).minY
+            return content
+                .offset(y: y < 0 ? -y * 0.25 : 0)
+                .opacity(y < 0 ? max(0.3, 1 + Double(y) / 320) : 1)
+                .scaleEffect(y > 0 ? 1 + y / 900 : 1, anchor: .bottom)
+        }
+    }
+}
+
+/// أعمدة تتكيّف مع عرض الشاشة: عمودان في الجوال وأكثر في الآيباد
+enum RawhGrid {
+    static func adaptive(_ min: CGFloat = 150, spacing: CGFloat = 12) -> [GridItem] {
+        [GridItem(.adaptive(minimum: min, maximum: 260), spacing: spacing)]
+    }
+}
+
+/// توهّج ذهبي متحرك خلف الشعار (شبكة ألوان iOS 18، وتدرّج ثابت قبلها)
+struct GildedGlow: View {
+    @EnvironmentObject var app: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduce
+    var body: some View {
+        if #available(iOS 18.0, *) {
+            TimelineView(.animation(minimumInterval: 1 / 20, paused: reduce)) { tl in
+                let t = Float(tl.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1000))
+                let k = app.skin
+                let cx: Float = 0.5 + 0.12 * sin(t * 0.7)
+                let cy: Float = 0.5 + 0.1 * cos(t * 0.5)
+                let pts: [SIMD2<Float>] = [
+                    SIMD2(0, 0), SIMD2(0.5, 0), SIMD2(1, 0),
+                    SIMD2(0, 0.5), SIMD2(cx, cy), SIMD2(1, 0.5),
+                    SIMD2(0, 1), SIMD2(0.5, 1), SIMD2(1, 1)
+                ]
+                MeshGradient(width: 3, height: 3, points: pts, colors: [
+                    k.card, k.goldLight.opacity(0.35), k.card,
+                    k.goldLight.opacity(0.25), k.card2, k.lapisLight.opacity(0.18),
+                    k.card, k.gold.opacity(0.22), k.card
+                ])
+            }
+        } else {
+            RadialGradient(colors: [app.skin.goldLight.opacity(0.25), app.skin.card], center: .center, startRadius: 4, endRadius: 220)
+        }
+    }
+}
+
 
 // MARK: - لمسات فنية
 
@@ -1870,6 +1994,7 @@ struct HomeView: View {
     @State private var focus = false
     @State private var liveOn = PrayerLive.isRunning
     @State private var liveTick = 0
+    @Namespace private var zoom
 
     var body: some View {
         NavigationStack {
@@ -1877,32 +2002,45 @@ struct HomeView: View {
                 ScreenBackground()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
-                        header
-                        masthead
-                        wirdCard
-                        prayerCard
-                        PrayerCheckStrip()
-                        verseCard
-                        SectionTitle(title: "الأذكار", trailing: "\(AR.n(DB.cats.count)) أقسام")
-                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                            ForEach(DB.cats) { c in
-                                Button { reader = c; focus = false } label: { CategoryTile(cat: c) }
-                                    .buttonStyle(PressScale())
-                                    .scrollReveal()
+                        header.reveal(0)
+                        masthead.parallaxHeader().reveal(1)
+                        if app.shows("wird") { wirdCard.zoomSource("wird", in: zoom).reveal(2) }
+                        if app.shows("prayer") { prayerCard.reveal(3) }
+                        if app.shows("check") { PrayerCheckStrip().reveal(4) }
+                        if app.shows("verse") { verseCard.reveal(5) }
+                        if app.shows("cats") {
+                            SectionTitle(title: "الأذكار", trailing: "\(AR.n(DB.cats.count)) أقسام").reveal(6)
+                            LazyVGrid(columns: RawhGrid.adaptive(150), spacing: 12) {
+                                ForEach(DB.cats) { c in
+                                    Button { openedFromGrid = true; reader = c; focus = false } label: { CategoryTile(cat: c) }
+                                        .buttonStyle(PressScale())
+                                        .zoomSource(c.id, in: zoom)
+                                        .scrollReveal()
+                                }
                             }
                         }
                     }
                     .padding(.horizontal, 18)
                     .padding(.bottom, 30)
+                    .readableWidth()
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showSettings) { SettingsView().environmentObject(app).rawhSheet(app.skin) }
             .sheet(isPresented: $showSearch) { SearchView().environmentObject(app).rawhSheet(app.skin) }
             .sheet(isPresented: $showCity) { CityPickerSheet().environmentObject(app).rawhSheet(app.skin) }
-            .fullScreenCover(item: $reader) { c in ReaderView(cat: c, startFocus: focus).environmentObject(app) }
+            .fullScreenCover(item: $reader) { c in
+                ReaderView(cat: c, startFocus: focus).environmentObject(app)
+                    .zoomDestination(zoomId(c), in: zoom)
+            }
         }
     }
+
+    /// بطاقة الوِرد تتكبّر من نفسها، والأقسام من مربعاتها
+    private func zoomId(_ c: AdhkarCategory) -> String {
+        c.id == PrayerTimes.currentWird(now: app.now, city: app.city) && app.shows("wird") && !openedFromGrid ? "wird" : c.id
+    }
+    @State private var openedFromGrid = false
 
     private var greeting: String {
         let h = AR.gregorian.component(.hour, from: app.now)
@@ -1942,7 +2080,8 @@ struct HomeView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 18).padding(.vertical, 18)
-        .surface(26, skin: app.skin, highlight: true)
+        .background(GildedGlow().clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous)))
+        .surface(26, skin: app.skin, highlight: true, tint: .clear)
     }
 
     // وِرد الوقت: صفحة مذهّبة ونافذة محراب فيها التقدّم
@@ -1997,11 +2136,11 @@ struct HomeView: View {
             .frame(height: 12)
             .environment(\.layoutDirection, .rightToLeft)
             HStack(spacing: 10) {
-                Button { focus = false; reader = cat } label: {
+                Button { openedFromGrid = false; focus = false; reader = cat } label: {
                     Label(p > 0 && p < 1 ? "أكمل الوِرد" : "ابدأ الوِرد", systemImage: "chevron.left")
                 }
                 .buttonStyle(GoldButtonStyle(skin: app.skin))
-                Button { focus = true; reader = cat } label: {
+                Button { openedFromGrid = false; focus = true; reader = cat } label: {
                     Label("الخلوة", systemImage: "smallcircle.filled.circle")
                 }
                 .buttonStyle(GhostButtonStyle(skin: app.skin))
@@ -2021,7 +2160,13 @@ struct HomeView: View {
                         Text("مواقيت الصلاة").rawhText(13, .bold).foregroundStyle(app.skin.rubric)
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(PrayerTimes.names[nx.key] ?? "").rawhText(24, .bold).foregroundStyle(app.skin.text)
-                            Text(Self.left(nx.date.timeIntervalSince(app.now))).rawhText(14, .semibold).foregroundStyle(app.skin.gold)
+                            TimelineView(.periodic(from: .now, by: 1)) { tl in
+                                Text(Self.clock(nx.date.timeIntervalSince(tl.date)))
+                                    .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                                    .foregroundStyle(app.skin.gold)
+                                    .contentTransition(.numericText(countsDown: true))
+                                    .animation(.snappy, value: Int(nx.date.timeIntervalSince(tl.date)))
+                            }
                         }
                     }
                     Spacer()
@@ -2078,6 +2223,14 @@ struct HomeView: View {
                 }
             }
         }
+    }
+
+    /// عدّ تنازلي ساعات:دقائق:ثواني بالأرقام العربية
+    static func clock(_ secs: TimeInterval) -> String {
+        let t = max(0, Int(secs))
+        let h = t / 3600, m = (t % 3600) / 60, sec = t % 60
+        func two(_ v: Int) -> String { (v < 10 ? AR.n(0) : "") + AR.n(v) }
+        return "\u{2066}\(two(h)):\(two(m)):\(two(sec))\u{2069}"
     }
 
     static func left(_ secs: TimeInterval) -> String {
@@ -2315,8 +2468,8 @@ struct DhikrCard: View {
                 Text(x).rawhText(13).italic().foregroundStyle(app.skin.sub).lineSpacing(4)
             }
             Text(dhikr.t)
-                .rawhText(21 * app.s.textScale, .regular)
-                .lineSpacing(11 * app.s.textScale)
+                .font(app.dhikrFont.font(21 * app.s.textScale * (app.dhikrFont == .system ? 1 : 1.12)))
+                .lineSpacing((app.dhikrFont == .system ? 11 : app.dhikrFont.spacing) * app.s.textScale)
                 .foregroundStyle(done ? app.skin.text.opacity(0.55) : app.skin.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
@@ -2424,8 +2577,8 @@ struct FocusPage: View {
             if let h = dhikr.h { Text(h).rawhText(14, .semibold).foregroundStyle(app.skin.gold) }
             ScrollView {
                 Text(dhikr.t)
-                    .rawhText(27 * app.s.textScale, .regular)
-                    .lineSpacing(14 * app.s.textScale)
+                    .font(app.dhikrFont.font(27 * app.s.textScale * (app.dhikrFont == .system ? 1 : 1.12)))
+                    .lineSpacing((app.dhikrFont == .system ? 14 : app.dhikrFont.spacing + 4) * app.s.textScale)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(app.skin.text)
                     .padding(.horizontal, 26)
@@ -2690,6 +2843,7 @@ struct QuranView: View {
                     }
                     .padding(.horizontal, 18)
                     .padding(.bottom, 30)
+                    .readableWidth()
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
@@ -2917,6 +3071,7 @@ struct SurahView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 40)
+                    .readableWidth(760)
                 }
                 .onChange(of: audio.index) { _, i in
                     if audio.playingId == playId, i < ayahs.count {
@@ -3039,6 +3194,7 @@ struct QuranReadingView: View {
                             .padding(.horizontal, 20)
                             .padding(.top, 74)
                             .padding(.bottom, 70)
+                            .readableWidth(720)
                     }
                     .tag(i)
                 }
@@ -3372,6 +3528,7 @@ struct SebhaView: View {
                         }
                     }
                     .padding(.bottom, 30)
+                    .readableWidth()
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
@@ -3444,6 +3601,15 @@ struct StatsView: View {
                         SectionTitle(title: "آخر ٢٨ يومًا")
                         Card { Heatmap() }
 
+                        SectionTitle(title: "الأوسمة", trailing: "\(AR.n(app.badges.filter { $0.progress >= 1 }.count)) من \(AR.n(app.badges.count))")
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(app.badges) { b in BadgeMedal(badge: b).frame(width: 104) }
+                            }
+                            .padding(.vertical, 14).padding(.horizontal, 8)
+                        }
+                        .surface(22, skin: app.skin)
+
                         SectionTitle(title: "أقسام اليوم")
                         VStack(spacing: 10) {
                             ForEach(DB.cats) { c in
@@ -3464,6 +3630,7 @@ struct StatsView: View {
                     }
                     .padding(.horizontal, 18)
                     .padding(.bottom, 30)
+                    .readableWidth()
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
@@ -3520,7 +3687,7 @@ struct Heatmap: View {
 
 // MARK: - المزيد
 
-enum MoreRoute: Hashable { case names, duas, occasions, reminders, qibla, favorites, prayers, khatma, calendar, zakat }
+enum MoreRoute: Hashable { case names, duas, occasions, reminders, qibla, favorites, prayers, khatma, calendar, zakat, times, badges, backup, customize }
 
 struct MoreView: View {
     @EnvironmentObject var app: AppState
@@ -3542,6 +3709,8 @@ struct MoreView: View {
                             hub("ختمة القرآن", app.s.khatmaStart.isEmpty ? "خطة يومية لختم المصحف" : "صفحة \(AR.n(app.s.khatmaPage)) من ٦٠٤", symbol: "book.pages.fill") { path.append(.khatma) }
                             hub("التقويم الهجري", AR.hijriString(app.now), symbol: "calendar") { path.append(.calendar) }
                             hub("حاسبة الزكاة", "النصاب وربع العشر بسهولة", symbol: "banknote.fill") { path.append(.zakat) }
+                            hub("الأوسمة", "\(AR.n(app.badges.filter { $0.progress >= 1 }.count)) من \(AR.n(app.badges.count)) وسامًا", symbol: "medal.fill") { path.append(.badges) }
+                            hub("جدول المواقيت", "مواقيت الشهر كاملًا لمدينتك", symbol: "tablecells.fill") { path.append(.times) }
                         }
                         group("أذكار وأدعية") {
                             hub("أسماء الله الحسنى", "تسعة وتسعون اسمًا", custom: AnyView(EightStar().stroke(app.skin.goldLight, lineWidth: 1.6).frame(width: 24, height: 24))) { path.append(.names) }
@@ -3552,7 +3721,9 @@ struct MoreView: View {
                         group("أدوات") {
                             hub("التذكيرات", "إشعارات بالأذكار والصلاة والصيام", symbol: "bell.fill", wiggle: true) { path.append(.reminders) }
                             hub("اتجاه القبلة", "بوصلة تتوجه حين تتجه", symbol: "location.north.circle.fill") { path.append(.qibla) }
+                            hub("التخصيص", "المظهر التلقائي وأقسام الرئيسية والخط", symbol: "wand.and.stars") { path.append(.customize) }
                             hub("المظهر والإعدادات", "الألوان والخط والمدينة", symbol: "paintpalette.fill") { showSettings = true }
+                            hub("النسخ الاحتياطي", "صدّر تقدّمك واسترجعه", symbol: "externaldrive.fill") { path.append(.backup) }
                             hub("المقدمة", "شاهد التعريف بالتطبيق", symbol: "play.fill") { showIntro = true }
                         }
 
@@ -3574,6 +3745,7 @@ struct MoreView: View {
                     }
                     .padding(.horizontal, 18)
                     .padding(.bottom, 30)
+                    .readableWidth()
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
@@ -3590,6 +3762,10 @@ struct MoreView: View {
                     case .khatma: KhatmaView()
                     case .calendar: HijriCalendarView()
                     case .zakat: ZakatView()
+                    case .times: MonthlyTimesView()
+                    case .badges: BadgesView()
+                    case .backup: BackupView()
+                    case .customize: CustomizeView()
                     }
                 }
                 .environmentObject(app)
@@ -3602,7 +3778,7 @@ struct MoreView: View {
     private func group<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(title: title)
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) { content() }
+            LazyVGrid(columns: RawhGrid.adaptive(150), spacing: 12) { content() }
         }
     }
 
@@ -3664,6 +3840,7 @@ struct SubScreen<C: View>: View {
                 }
                 .padding(.horizontal, 18)
                 .padding(.bottom, 30)
+                .readableWidth()
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -4159,6 +4336,7 @@ struct SettingsView: View {
                     }
                     .padding(.horizontal, 18)
                     .padding(.bottom, 30)
+                    .readableWidth()
                 }
             }
             .navigationTitle("المظهر والإعدادات")
@@ -4278,6 +4456,7 @@ struct CityPickerSheet: View {
                     }
                     .padding(.horizontal, 18)
                     .padding(.bottom, 30)
+                    .readableWidth()
                 }
                 .scrollDismissesKeyboard(.immediately)
             }
@@ -4987,6 +5166,329 @@ struct RiyalText: View {
     }
 }
 
+// MARK: - جدول المواقيت الشهري
+
+struct MonthlyTimesView: View {
+    @EnvironmentObject var app: AppState
+    @State private var offset = 0
+    @State private var hijriMonth = true
+
+    private var days: [Date] {
+        let cal = hijriMonth ? AR.hijri : AR.gregorian
+        let base = cal.date(byAdding: .month, value: offset, to: app.now) ?? app.now
+        guard let range = cal.range(of: .day, in: .month, for: base),
+              let start = cal.dateInterval(of: .month, for: base)?.start else { return [] }
+        let first = AR.gregorian.startOfDay(for: start)
+        return (0..<range.count).compactMap { i in AR.gregorian.date(byAdding: .day, value: i, to: first) }
+    }
+    private var title: String {
+        guard let d = days.first else { return "" }
+        return hijriMonth ? AR.fmt("MMMM y", hijri: true).string(from: d) + " هـ" : AR.fmt("MMMM y").string(from: d) + " م"
+    }
+    private let cols = ["fajr", "sunrise", "dhuhr", "asr", "maghrib", "isha"]
+
+    var body: some View {
+        SubScreen(title: "جدول المواقيت", subtitle: "\(app.city.n) · بتقويم أم القرى") {
+            Picker("", selection: $hijriMonth) {
+                Text("شهر هجري").tag(true)
+                Text("شهر ميلادي").tag(false)
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: hijriMonth) { _, _ in offset = 0 }
+
+            HStack {
+                arrow("chevron.right", -1)
+                Spacer()
+                Text(title).rawhText(18, .bold).foregroundStyle(app.skin.text).contentTransition(.opacity)
+                Spacer()
+                arrow("chevron.left", 1)
+            }
+
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    Text("اليوم").frame(width: 58, alignment: .leading)
+                    ForEach(cols, id: \.self) { k in Text(PrayerTimes.names[k] ?? "").frame(maxWidth: .infinity) }
+                }
+                .rawhText(11, .bold).foregroundStyle(app.skin.rubric)
+                .padding(.horizontal, 10).padding(.vertical, 10)
+                .background(app.skin.gold.opacity(0.1))
+                ForEach(Array(days.enumerated()), id: \.offset) { i, d in
+                    let today = AR.gregorian.isDate(d, inSameDayAs: app.now)
+                    let t = PrayerTimes.compute(for: d, city: app.city)
+                    let friday = AR.gregorian.component(.weekday, from: d) == 6
+                    HStack(spacing: 0) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(AR.n(AR.hijri.component(.day, from: d)) + " · " + AR.n(AR.gregorian.component(.day, from: d)))
+                                .rawhText(11.5, .bold)
+                            Text(AR.fmt("EEE").string(from: d)).rawhText(9.5).opacity(0.7)
+                        }
+                        .frame(width: 58, alignment: .leading)
+                        ForEach(cols, id: \.self) { k in
+                            Text(AR.fmt("h:mm").string(from: t.date(k, on: d)))
+                                .rawhText(11.5, today ? .bold : .regular)
+                                .lineLimit(1).minimumScaleFactor(0.7)
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .foregroundStyle(today ? app.skin.onGold : (friday ? app.skin.lapis : app.skin.text))
+                    .padding(.horizontal, 10).padding(.vertical, 9)
+                    .background(today ? AnyShapeStyle(app.skin.gold) : AnyShapeStyle(i % 2 == 0 ? Color.clear : app.skin.gold.opacity(0.05)))
+                    .id(i)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .surface(18, skin: app.skin)
+            Text("الجمعة باللون اللازوردي. الأوقات تقريبية بحساب أم القرى، والعشاء بعد المغرب بساعة ونصف (وساعتين في رمضان).")
+                .rawhText(11.5).foregroundStyle(app.skin.sub).lineSpacing(3)
+        }
+    }
+
+    private func arrow(_ sym: String, _ d: Int) -> some View {
+        Button { withAnimation(.snappy) { offset += d } } label: {
+            Image(systemName: sym).font(.system(size: 14, weight: .bold)).foregroundStyle(app.skin.gold)
+                .frame(width: 38, height: 38).glassCircle(skin: app.skin)
+        }
+        .buttonStyle(PressScale())
+    }
+}
+
+// MARK: - الأوسمة
+
+struct Badge: Identifiable {
+    let id: String
+    let title: String
+    let detail: String
+    let symbol: String
+    let progress: Double      // ٠ إلى ١
+}
+
+extension AppState {
+    var badges: [Badge] {
+        func p(_ v: Int, _ goal: Int) -> Double { min(1, Double(v) / Double(goal)) }
+        let wirdDays = s.done.values.filter { $0.contains("morning") || $0.contains("evening") }.count
+        let fullPrayerDays = s.prayed.values.filter { Set($0).isSuperset(of: AppState.fivePrayers) }.count
+        return [
+            Badge(id: "first", title: "البداية", detail: "أتممت أول وِرد", symbol: "leaf.fill", progress: p(wirdDays, 1)),
+            Badge(id: "week", title: "أسبوع ذِكر", detail: "٧ أيام متتالية من الوِرد", symbol: "flame.fill", progress: p(streak, 7)),
+            Badge(id: "month", title: "شهر ذِكر", detail: "٣٠ يومًا متتالية من الوِرد", symbol: "moon.stars.fill", progress: p(streak, 30)),
+            Badge(id: "salah", title: "يوم مكتمل", detail: "صلّيت الخمس في يوم", symbol: "checkmark.seal.fill", progress: p(fullPrayerDays, 1)),
+            Badge(id: "salah7", title: "المحافظ", detail: "٧ أيام متتالية بالصلوات الخمس", symbol: "shield.lefthalf.filled", progress: p(prayerStreak, 7)),
+            Badge(id: "salah40", title: "أربعون يومًا", detail: "٤٠ يومًا متتالية بالصلوات الخمس", symbol: "crown.fill", progress: p(prayerStreak, 40)),
+            Badge(id: "sebha1k", title: "ألف تسبيحة", detail: "١٬٠٠٠ ذكر وتسبيحة", symbol: "circle.hexagongrid.fill", progress: p(totalCount, 1000)),
+            Badge(id: "sebha10k", title: "عشرة آلاف", detail: "١٠٬٠٠٠ ذكر وتسبيحة", symbol: "sparkles", progress: p(totalCount, 10000)),
+            Badge(id: "khatma", title: "الختمة", detail: "أتممت ختم القرآن", symbol: "book.closed.fill", progress: s.khatmaCount > 0 ? 1 : Double(s.khatmaPage) / 604),
+            Badge(id: "fav", title: "المنتقي", detail: "حفظت ١٠ أذكار", symbol: "bookmark.fill", progress: p(s.favorites.count, 10))
+        ]
+    }
+}
+
+struct BadgeMedal: View {
+    @EnvironmentObject var app: AppState
+    var badge: Badge
+    @State private var tap = 0
+    var body: some View {
+        let won = badge.progress >= 1
+        VStack(spacing: 8) {
+            ZStack {
+                Circle().fill(won ? AnyShapeStyle(LinearGradient(colors: [app.skin.goldLight, app.skin.gold], startPoint: .top, endPoint: .bottom)) : AnyShapeStyle(app.skin.gold.opacity(0.12)))
+                Circle().fill(won ? AnyShapeStyle(LinearGradient(colors: [app.skin.lapisLight, app.skin.lapis], startPoint: .top, endPoint: .bottom)) : AnyShapeStyle(app.skin.card)).padding(4)
+                Circle().trim(from: 0, to: won ? 1 : badge.progress)
+                    .stroke(app.skin.gold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(.degrees(-90)).padding(1.5)
+                    .opacity(won ? 0 : 1)
+                Image(systemName: badge.symbol)
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(won ? app.skin.goldLight : app.skin.sub.opacity(0.5))
+                    .symbolEffect(.bounce, value: tap)
+                if won {
+                    StarBurst().fill(app.skin.goldLight).frame(width: 10, height: 10).offset(y: -34)
+                }
+            }
+            .frame(width: 70, height: 70)
+            .shadow(color: won ? app.skin.gold.opacity(0.35) : .clear, radius: 8, y: 3)
+            Text(badge.title).rawhText(13, .bold).foregroundStyle(won ? app.skin.text : app.skin.sub)
+            Text(won ? badge.detail : "\(AR.n(Int(badge.progress * 100)))٪ · \(badge.detail)")
+                .rawhText(10.5).foregroundStyle(app.skin.sub).multilineTextAlignment(.center).lineLimit(2)
+        }
+        .frame(maxWidth: .infinity)
+        .onTapGesture { tap += 1 }
+        .sensoryFeedback(.impact(weight: .light), trigger: tap)
+    }
+}
+
+struct BadgesView: View {
+    @EnvironmentObject var app: AppState
+    var body: some View {
+        let list = app.badges
+        let won = list.filter { $0.progress >= 1 }.count
+        SubScreen(title: "الأوسمة", subtitle: "\(AR.n(won)) من \(AR.n(list.count)) · تُكتسب بالمداومة لا بالكثرة") {
+            LazyVGrid(columns: RawhGrid.adaptive(100, spacing: 10), spacing: 22) {
+                ForEach(Array(list.enumerated()), id: \.element.id) { i, b in
+                    BadgeMedal(badge: b).reveal(i)
+                }
+            }
+            .padding(.vertical, 18).padding(.horizontal, 10)
+            .surface(22, skin: app.skin, highlight: true)
+            Text("«أحبُّ الأعمال إلى الله أدومها وإن قلّ» — متفق عليه")
+                .rawhText(13, .medium).foregroundStyle(app.skin.gold).multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+        }
+    }
+}
+
+// MARK: - النسخ الاحتياطي
+
+struct BackupDocument: Transferable {
+    let data: Data
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .json) { $0.data }
+            .suggestedFileName("rawh-backup.json")
+    }
+}
+
+struct BackupView: View {
+    @EnvironmentObject var app: AppState
+    @State private var importing = false
+    @State private var message: String? = nil
+    @State private var ok = 0
+
+    private var backup: BackupDocument {
+        BackupDocument(data: (try? JSONEncoder().encode(app.s)) ?? Data())
+    }
+
+    var body: some View {
+        SubScreen(title: "النسخ الاحتياطي", subtitle: "انقل تقدّمك وإعداداتك لجوال جديد أو احتفظ بها") {
+            Card(highlight: true) {
+                VStack(alignment: .leading, spacing: 12) {
+                    row("flame.fill", "أيام الوِرد المسجّلة", s: AR.n(app.s.done.count))
+                    row("checkmark.seal.fill", "أيام الصلوات المسجّلة", s: AR.n(app.s.prayed.count))
+                    row("sparkles", "مجموع الأذكار والتسبيح", s: AR.n(app.totalCount))
+                    row("bookmark.fill", "الأذكار المحفوظة", s: AR.n(app.s.favorites.count))
+                    row("book.pages.fill", "الختمة", s: app.s.khatmaStart.isEmpty ? "—" : "صفحة \(AR.n(app.s.khatmaPage))")
+                }
+            }
+            ShareLink(item: backup, preview: SharePreview("نسخة رَوْح الاحتياطية", image: Image(systemName: "archivebox.fill"))) {
+                Label("صدّر نسخة احتياطية", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(GoldButtonStyle(skin: app.skin))
+            Button { importing = true } label: {
+                Label("استرجع من نسخة", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(GhostButtonStyle(skin: app.skin))
+            if let message {
+                Label(message, systemImage: ok > 0 ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .rawhText(13, .semibold).foregroundStyle(ok > 0 ? app.skin.green : Color.orange)
+                    .transition(.opacity)
+            }
+            Text("النسخة ملف صغير تحفظه في «الملفات» أو ترسله لنفسك. الاسترجاع يستبدل بيانات التطبيق الحالية بما في الملف.")
+                .rawhText(12).foregroundStyle(app.skin.sub).lineSpacing(4)
+        }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
+            switch result {
+            case .success(let url):
+                let access = url.startAccessingSecurityScopedResource()
+                defer { if access { url.stopAccessingSecurityScopedResource() } }
+                if let d = try? Data(contentsOf: url), let v = try? JSONDecoder().decode(Saved.self, from: d) {
+                    withAnimation { app.s = v; ok = 1; message = "تم الاسترجاع بنجاح" }
+                    Reminders.schedule(app.s)
+                } else {
+                    withAnimation { ok = 0; message = "الملف ما هو نسخة من رَوْح" }
+                }
+            case .failure:
+                withAnimation { ok = 0; message = "ما قدرنا نفتح الملف" }
+            }
+        }
+        .sensoryFeedback(.success, trigger: ok)
+    }
+
+    private func row(_ sym: String, _ t: String, s: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: sym).foregroundStyle(app.skin.gold).frame(width: 24)
+            Text(t).rawhText(14).foregroundStyle(app.skin.text)
+            Spacer()
+            Text(s).rawhText(14, .bold).foregroundStyle(app.skin.lapis)
+        }
+    }
+}
+
+// MARK: - تخصيص الرئيسية والمظهر
+
+struct CustomizeView: View {
+    @EnvironmentObject var app: AppState
+    private let sections: [(id: String, title: String, symbol: String)] = [
+        ("wird", "وِرد الوقت", "sun.horizon.fill"),
+        ("prayer", "مواقيت الصلاة", "clock.fill"),
+        ("check", "صلواتي اليوم", "checkmark.seal.fill"),
+        ("verse", "آية اليوم", "text.book.closed.fill"),
+        ("cats", "أقسام الأذكار", "square.grid.2x2.fill")
+    ]
+
+    var body: some View {
+        SubScreen(title: "التخصيص", subtitle: "اجعل رَوْح على ذوقك") {
+            SectionTitle(title: "المظهر")
+            Card {
+                Toggle(isOn: Binding(get: { app.s.autoSkin }, set: { v in withAnimation(.easeInOut(duration: 0.4)) { app.s.autoSkin = v } })) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("مظهر تلقائي حسب الوقت").rawhText(15, .semibold).foregroundStyle(app.skin.text)
+                        Text("عاجي من الفجر إلى المغرب، وحبر بعد المغرب").rawhText(12).foregroundStyle(app.skin.sub)
+                    }
+                }
+                .tint(app.skin.gold)
+            }
+
+            SectionTitle(title: "أقسام الرئيسية")
+            VStack(spacing: 0) {
+                ForEach(Array(sections.enumerated()), id: \.element.id) { i, sec in
+                    if i > 0 { Rectangle().fill(app.skin.line).frame(height: 0.6).padding(.leading, 52) }
+                    Toggle(isOn: Binding(get: { app.shows(sec.id) }, set: { on in
+                        withAnimation(.snappy) {
+                            if on { app.s.homeHidden.removeAll { $0 == sec.id } } else if !app.s.homeHidden.contains(sec.id) { app.s.homeHidden.append(sec.id) }
+                        }
+                    })) {
+                        HStack(spacing: 12) {
+                            Image(systemName: sec.symbol).foregroundStyle(app.skin.gold).frame(width: 26)
+                            Text(sec.title).rawhText(15, .medium).foregroundStyle(app.skin.text)
+                        }
+                    }
+                    .tint(app.skin.gold)
+                    .padding(.horizontal, 14).padding(.vertical, 11)
+                }
+            }
+            .surface(20, skin: app.skin)
+
+            SectionTitle(title: "خط الأذكار")
+            VStack(spacing: 10) {
+                ForEach(QuranFont.installed) { f in
+                    let on = app.dhikrFont == f
+                    Button { withAnimation(.snappy) { app.s.dhikrFont = f.rawValue } } label: {
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(f.title).rawhText(12.5, .bold).foregroundStyle(on ? app.skin.gold : app.skin.sub)
+                                Text("سُبْحَانَ اللَّهِ وَبِحَمْدِهِ").font(f.font(22)).foregroundStyle(app.skin.text)
+                            }
+                            Spacer()
+                            Image(systemName: on ? "checkmark.circle.fill" : "circle").font(.system(size: 21))
+                                .foregroundStyle(on ? app.skin.gold : app.skin.sub.opacity(0.4))
+                                .contentTransition(.symbolEffect(.replace))
+                        }
+                        .padding(14)
+                        .surface(18, skin: app.skin, highlight: on)
+                    }
+                    .buttonStyle(PressScale())
+                }
+            }
+            .sensoryFeedback(.selection, trigger: app.s.dhikrFont)
+        }
+    }
+}
+
+extension AppState {
+    var dhikrFont: QuranFont {
+        if let f = QuranFont(rawValue: s.dhikrFont), f.available { return f }
+        return .system
+    }
+}
+
 
 // MARK: - النشاط المباشر: تشغيل وإيقاف العدّ التنازلي للصلاة
 
@@ -5080,6 +5582,39 @@ struct OpenSebhaIntent: AppIntent {
     }
 }
 
+enum PrayerOption: String, AppEnum {
+    case fajr, dhuhr, asr, maghrib, isha
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "الصلاة"
+    static var caseDisplayRepresentations: [PrayerOption: DisplayRepresentation] = [
+        .fajr: "الفجر", .dhuhr: "الظهر", .asr: "العصر", .maghrib: "المغرب", .isha: "العشاء"
+    ]
+}
+
+/// «سجّل صلاة الظهر في رَوْح» — بدون فتح التطبيق
+struct LogPrayerIntent: AppIntent {
+    static var title: LocalizedStringResource = "سجّل صلاة"
+    static var description = IntentDescription("يسجّل صلاة اليوم في «صلواتي»")
+    @Parameter(title: "الصلاة", default: .dhuhr)
+    var prayer: PrayerOption
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let key = AR.dayKey()
+        if let app = AppState.current {
+            var list = app.s.prayed[key] ?? []
+            if !list.contains(prayer.rawValue) { list.append(prayer.rawValue) }
+            app.s.prayed[key] = list
+        } else if let d = UserDefaults.standard.data(forKey: "rawh.saved.v1"), var s = try? JSONDecoder().decode(Saved.self, from: d) {
+            var list = s.prayed[key] ?? []
+            if !list.contains(prayer.rawValue) { list.append(prayer.rawValue) }
+            s.prayed[key] = list
+            if let out = try? JSONEncoder().encode(s) { UserDefaults.standard.set(out, forKey: "rawh.saved.v1") }
+        }
+        let name = PrayerTimes.names[prayer.rawValue] ?? ""
+        return .result(dialog: "سجّلت صلاة \(name)، تقبّل الله منك")
+    }
+}
+
 struct RawhShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(intent: OpenAdhkarIntent(), phrases: [
@@ -5095,6 +5630,10 @@ struct RawhShortcuts: AppShortcutsProvider {
             "افتح السبحة في \(.applicationName)",
             "سبحة \(.applicationName)"
         ], shortTitle: "السبحة", systemImageName: "circle.hexagongrid.fill")
+        AppShortcut(intent: LogPrayerIntent(), phrases: [
+            "سجّل \(\.$prayer) في \(.applicationName)",
+            "صليت \(\.$prayer) في \(.applicationName)"
+        ], shortTitle: "سجّل صلاة", systemImageName: "checkmark.seal.fill")
     }
 }
 
