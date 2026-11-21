@@ -103,8 +103,8 @@ jobs:
                 path: Rawh/Info.plist
                 properties:
                   CFBundleDisplayName: "رَوْح"
-                  CFBundleShortVersionString: "4.0"
-                  CFBundleVersion: "9"
+                  CFBundleShortVersionString: "4.1"
+                  CFBundleVersion: "10"
                   NSSupportsLiveActivities: true
                   CFBundleURLTypes:
                     - CFBundleURLName: com.rawh.adhkar
@@ -115,6 +115,7 @@ jobs:
                     UIColorName: LaunchBG
                   UIRequiresFullScreen: true
                   UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+                  UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
                   UIBackgroundModes: [audio]
                   NSLocationWhenInUseUsageDescription: "يستخدم رَوْح موقعك لتحديد اتجاه القبلة بدقة."
                   NSMicrophoneUsageDescription: "يستخدم رَوْح الميكروفون لتسجيل صوتك لعبارات التنبيه."
@@ -124,7 +125,7 @@ jobs:
                 base:
                   PRODUCT_BUNDLE_IDENTIFIER: com.rawh.adhkar
                   PRODUCT_NAME: Rawh
-                  TARGETED_DEVICE_FAMILY: "1"
+                  TARGETED_DEVICE_FAMILY: "1,2"
                   SWIFT_VERSION: "5.0"
                   ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
                   ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
@@ -140,15 +141,15 @@ jobs:
                 path: RawhWidgets/Info.plist
                 properties:
                   CFBundleDisplayName: "رَوْح"
-                  CFBundleShortVersionString: "4.0"
-                  CFBundleVersion: "9"
+                  CFBundleShortVersionString: "4.1"
+                  CFBundleVersion: "10"
                   NSExtension:
                     NSExtensionPointIdentifier: com.apple.widgetkit-extension
               settings:
                 base:
                   PRODUCT_BUNDLE_IDENTIFIER: com.rawh.adhkar.widgets
                   PRODUCT_NAME: RawhWidgets
-                  TARGETED_DEVICE_FAMILY: "1"
+                  TARGETED_DEVICE_FAMILY: "1,2"
                   SWIFT_VERSION: "5.0"
                   SKIP_INSTALL: YES
                   CODE_SIGNING_ALLOWED: NO
@@ -186,4 +187,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest -y --cleanup-tag || true
-          gh release create latest Rawh.ipa --title "رَوْح — آخر نسخة" --notes "رَوْح ٤.٠: تصميم المخطوطة المذهّبة، وضع القراءة وخطوط المصحف، صلواتي والختمة والتقويم والزكاة. ثبّته عن طريق Sideloadly أو AltStore."
+          gh release create latest Rawh.ipa --title "رَوْح — آخر نسخة" --notes "رَوْح ٤.١: تصميم المخطوطة المذهّبة، حركات وانتقالات، الأوسمة وجدول المواقيت والتخصيص والنسخ الاحتياطي ودعم الآيباد، وضع القراءة وخطوط المصحف، صلواتي والختمة والتقويم والزكاة. ثبّته عن طريق Sideloadly أو AltStore."
+ 
