@@ -249,7 +249,8 @@ enum Cities {
             City(id: "buraydah", n: "بريدة", lat: 26.326, lng: 43.975),
             City(id: "unayzah", n: "عنيزة", lat: 26.084, lng: 43.994),
             City(id: "rass", n: "الرس", lat: 25.8694, lng: 43.4973),
-            City(id: "bukayriyah", n: "البكيرية", lat: 26.1394, lng: 43.6575)
+            City(id: "bukayriyah", n: "البكيرية", lat: 26.1394, lng: 43.6575),
+            City(id: "dariyah", n: "ضرية", lat: 24.7333, lng: 42.9167)
         ]),
         CityRegion(id: "east_r", name: "المنطقة الشرقية", cities: [
             City(id: "dammam", n: "الدمام", lat: 26.4207, lng: 50.0888),
@@ -1195,16 +1196,35 @@ struct SkyBackground: View {
     var skin: Skin
     var showMoon = true
     @State private var twinkle = false
+    @State private var drift = false
+    @State private var flow = false
     @Environment(\.accessibilityReduceMotion) private var reduce
     var body: some View {
         ZStack {
             LinearGradient(stops: [
                 .init(color: skin.bg, location: 0),
-                .init(color: skin.mid, location: 0.55),
+                .init(color: skin.mid, location: drift ? 0.5 : 0.6),
                 .init(color: skin.bg2, location: 1)
             ], startPoint: .top, endPoint: .bottom)
+            // سُحب ضوئية تسبح ببطء
+            GeometryReader { g in
+                let w = g.size.width, h = g.size.height
+                // بقع ضوء ناعمة الأطراف (تدرّج دائري بدل الضبابية: أخف على الجوال)
+                ZStack {
+                    Ellipse().fill(RadialGradient(colors: [skin.goldLight.opacity(skin == .night ? 0.10 : 0.30), .clear], center: .center, startRadius: 0, endRadius: w * 0.55))
+                        .frame(width: w * 1.2, height: h * 0.36)
+                        .offset(x: flow ? w * 0.28 : -w * 0.28, y: h * (skin == .maghrib || skin == .fajr ? 0.32 : -0.18))
+                    Ellipse().fill(RadialGradient(colors: [skin.mid.opacity(0.6), .clear], center: .center, startRadius: 0, endRadius: w * 0.5))
+                        .frame(width: w * 1.0, height: h * 0.3)
+                        .offset(x: flow ? -w * 0.32 : w * 0.25, y: h * 0.12)
+                    Ellipse().fill(RadialGradient(colors: [Color.white.opacity(skin == .night ? 0.05 : 0.12), .clear], center: .center, startRadius: 0, endRadius: w * 0.45))
+                        .frame(width: w * 0.9, height: h * 0.2)
+                        .offset(x: drift ? w * 0.2 : -w * 0.22, y: -h * 0.32)
+                }
+                .frame(width: w, height: h)
+            }
             // الضوء: شمس عالية في الضحى، مائلة في العصر، على الأفق في الفجر والمغرب، وقمر في الليل
-            RadialGradient(colors: [skin.goldLight.opacity(glow), .clear], center: lightCenter, startRadius: 2, endRadius: 360)
+            RadialGradient(colors: [skin.goldLight.opacity(glow), .clear], center: lightCenter, startRadius: 2, endRadius: drift ? 400 : 330)
             if skin == .night || skin == .fajr {
                 StarField(count: skin == .night ? 110 : 45)
                     .opacity(skin == .night ? (twinkle ? 1 : 0.75) : 0.45)
@@ -1223,18 +1243,21 @@ struct SkyBackground: View {
         .onAppear {
             guard !reduce else { return }
             withAnimation(.easeInOut(duration: 3.2).repeatForever(autoreverses: true)) { twinkle = true }
+            withAnimation(.easeInOut(duration: 14).repeatForever(autoreverses: true)) { drift = true }
+            withAnimation(.easeInOut(duration: 22).repeatForever(autoreverses: true)) { flow = true }
         }
     }
     private var glow: Double {
         switch skin { case .duha: return 0.55; case .asr: return 0.5; case .maghrib: return 0.65; case .fajr: return 0.45; case .night: return 0.12 }
     }
     private var lightCenter: UnitPoint {
+        let d: CGFloat = drift ? 0.08 : -0.08
         switch skin {
-        case .duha: return UnitPoint(x: 0.82, y: 0.06)
-        case .asr: return UnitPoint(x: 0.12, y: 0.22)
-        case .maghrib: return UnitPoint(x: 0.5, y: 1.0)
-        case .fajr: return UnitPoint(x: 0.5, y: 1.05)
-        case .night: return UnitPoint(x: 0.15, y: 0.1)
+        case .duha: return UnitPoint(x: 0.82 + d, y: 0.06)
+        case .asr: return UnitPoint(x: 0.12 - d, y: 0.22 + d * 0.5)
+        case .maghrib: return UnitPoint(x: 0.5 + d, y: 1.0)
+        case .fajr: return UnitPoint(x: 0.5 - d, y: 1.05)
+        case .night: return UnitPoint(x: 0.15 + d * 0.5, y: 0.1)
         }
     }
 }
@@ -2016,7 +2039,6 @@ struct HomeView: View {
 
     private var hero: some View {
         let nx = PrayerTimes.next(after: app.now, city: app.city)
-        let t = PrayerTimes.compute(for: app.now, city: app.city)
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: app.skin.symbol).symbolRenderingMode(.multicolor).font(.system(size: 15))
@@ -2040,10 +2062,6 @@ struct HomeView: View {
                     .shadow(color: .black.opacity(0.15), radius: 10, y: 3)
             }
             Text("متبقي على صلاة \(PrayerTimes.names[nx.key] ?? "")").rawhText(13.5).foregroundStyle(app.skin.sub)
-
-            SunPathView(times: t, now: app.now)
-                .frame(height: 70)
-                .padding(.top, 4)
 
             HStack {
                 Label(AR.dayF.string(from: app.now), systemImage: MoonPhase.today)
@@ -6613,7 +6631,7 @@ import ActivityKit
 // MARK: - اختيار المدينة في إعدادات الودجت
 
 enum CityOption: String, AppEnum {
-    case riyadh, kharj, majmaah, dawadmi, zulfi, shaqra, afif, quwayiyah, wadi, makkah, jeddah, taif, rabigh, qunfudhah, lith, madinah, yanbu, ula, badr, buraydah, unayzah, rass, bukayriyah, dammam, khobar, dhahran, ahsa, jubail, qatif, hafar, khafji, abha, khamis, bisha, namas, muhayil, tabuk, wajh, duba, tayma, hail, baqaa, arar, rafha, turaif, jazan, sabya, abuarish, samtah, najran, sharurah, baha, baljurashi, sakaka, dumah, qurayyat
+    case riyadh, kharj, majmaah, dawadmi, zulfi, shaqra, afif, quwayiyah, wadi, makkah, jeddah, taif, rabigh, qunfudhah, lith, madinah, yanbu, ula, badr, buraydah, unayzah, rass, bukayriyah, dariyah, dammam, khobar, dhahran, ahsa, jubail, qatif, hafar, khafji, abha, khamis, bisha, namas, muhayil, tabuk, wajh, duba, tayma, hail, baqaa, arar, rafha, turaif, jazan, sabya, abuarish, samtah, najran, sharurah, baha, baljurashi, sakaka, dumah, qurayyat
 
     static var typeDisplayRepresentation: TypeDisplayRepresentation = "المدينة"
     static var caseDisplayRepresentations: [CityOption: DisplayRepresentation] = [
@@ -6640,6 +6658,7 @@ enum CityOption: String, AppEnum {
         .unayzah: "عنيزة",
         .rass: "الرس",
         .bukayriyah: "البكيرية",
+        .dariyah: "ضرية",
         .dammam: "الدمام",
         .khobar: "الخبر",
         .dhahran: "الظهران",
