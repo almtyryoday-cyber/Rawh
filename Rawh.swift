@@ -166,17 +166,17 @@ enum Skin: String, CaseIterable, Identifiable, Codable {
     var isLight: Bool { false }
     /// السماء من الأعلى إلى الأفق
     var bg: Color {
-        switch self { case .fajr: return Color(hex: 0x1C1E4A); case .duha: return Color(hex: 0x1E5FB4); case .asr: return Color(hex: 0x9C5524); case .maghrib: return Color(hex: 0x241A4A); case .night: return Color(hex: 0x04071A) }
+        switch self { case .fajr: return Color(hex: 0x1C1E4A); case .duha: return Color(hex: 0x1E5FB4); case .asr: return Color(hex: 0x9C5524); case .maghrib: return Color(hex: 0x241A4A); case .night: return Color(hex: 0x000105) }
     }
     var mid: Color {
-        switch self { case .fajr: return Color(hex: 0x56478A); case .duha: return Color(hex: 0x3F86D2); case .asr: return Color(hex: 0xD48A3E); case .maghrib: return Color(hex: 0x7A3A6C); case .night: return Color(hex: 0x0D1434) }
+        switch self { case .fajr: return Color(hex: 0x56478A); case .duha: return Color(hex: 0x3F86D2); case .asr: return Color(hex: 0xD48A3E); case .maghrib: return Color(hex: 0x7A3A6C); case .night: return Color(hex: 0x050819) }
     }
     var bg2: Color {
-        switch self { case .fajr: return Color(hex: 0xE39C9B); case .duha: return Color(hex: 0x9DD0F7); case .asr: return Color(hex: 0xF1C27C); case .maghrib: return Color(hex: 0xEE8248); case .night: return Color(hex: 0x1B2452) }
+        switch self { case .fajr: return Color(hex: 0xE39C9B); case .duha: return Color(hex: 0x9DD0F7); case .asr: return Color(hex: 0xF1C27C); case .maghrib: return Color(hex: 0xEE8248); case .night: return Color(hex: 0x11173A) }
     }
     /// زجاج البطاقات مصبوغ بلون السماء
     var card: Color {
-        switch self { case .fajr: return Color(hex: 0x141640).opacity(0.38); case .duha: return Color(hex: 0x0E3F82).opacity(0.36); case .asr: return Color(hex: 0x5E2F0E).opacity(0.34); case .maghrib: return Color(hex: 0x1A1038).opacity(0.40); case .night: return Color(hex: 0x1A2350).opacity(0.55) }
+        switch self { case .fajr: return Color(hex: 0x141640).opacity(0.38); case .duha: return Color(hex: 0x0E3F82).opacity(0.36); case .asr: return Color(hex: 0x5E2F0E).opacity(0.34); case .maghrib: return Color(hex: 0x1A1038).opacity(0.40); case .night: return Color(hex: 0x1C2450).opacity(0.5) }
     }
     var card2: Color { Color.white.opacity(0.16) }
     var text: Color { .white }
@@ -196,6 +196,17 @@ enum Skin: String, CaseIterable, Identifiable, Codable {
     var line: Color { Color.white.opacity(0.18) }
     var onGold: Color { Color(hex: 0x1B1633) }
     var shadow: Color { Color.black.opacity(0.18) }
+
+    /// وقت السماء قبل صلاة معيّنة (للنشاط المباشر)
+    static func before(_ key: String) -> Skin {
+        switch key {
+        case "fajr": return .night
+        case "sunrise": return .fajr
+        case "dhuhr", "asr": return .duha
+        case "maghrib": return .asr
+        default: return .maghrib
+        }
+    }
 
     /// وقت السماء الآن حسب مواقيت المدينة
     static func at(_ date: Date, city: City) -> Skin {
@@ -1229,12 +1240,16 @@ struct SkyBackground: View {
                 StarField(count: skin == .night ? 110 : 45)
                     .opacity(skin == .night ? (twinkle ? 1 : 0.75) : 0.45)
                 if skin == .night && showMoon {
-                    Circle().fill(Color(hex: 0xFFF6DC)).frame(width: 46, height: 46)
-                        .overlay(Circle().fill(skin.bg).frame(width: 40, height: 40).offset(x: 12, y: -6))
-                        .shadow(color: Color(hex: 0xFFF1C9).opacity(0.6), radius: 24)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .padding(.top, 70).padding(.leading, 34)
-                        .opacity(0.9)
+                    // هلال حقيقي (بدون قرص داكن فوقه)
+                    Image(systemName: "moon.fill")
+                        .font(.system(size: 30, weight: .regular))
+                        .foregroundStyle(Color(hex: 0xFFF3D2))
+                        .rotationEffect(.degrees(-20))
+                        .shadow(color: Color(hex: 0xFFF1C9).opacity(0.7), radius: 16)
+                        .offset(x: drift ? 6 : -6)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .padding(.top, 58)
+                        .opacity(0.85)
                 }
             }
         }
@@ -4437,45 +4452,53 @@ struct SettingsView: View {
 }
 
 
-/// اختيار السماء: حيّة تتبع الوقت، أو ثابتة على وقت
+/// اختيار السماء: حيّة تتبع الوقت، أو ثابتة على وقت (شبكة ٣ × ٢ متناسقة)
 struct SkyPicker: View {
     @EnvironmentObject var app: AppState
+    private let cols = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                swatch(nil)
-                ForEach(Skin.allCases) { k in swatch(k) }
-            }
-            .padding(.vertical, 4)
+        LazyVGrid(columns: cols, spacing: 12) {
+            swatch(nil)
+            ForEach(Skin.allCases) { k in swatch(k) }
         }
-        .scrollClipDisabled()
         .sensoryFeedback(.selection, trigger: app.s.autoSkin ? "live" : app.s.skin.rawValue)
     }
 
     private func swatch(_ k: Skin?) -> some View {
         let on = k == nil ? app.s.autoSkin : (!app.s.autoSkin && app.s.skin == k)
         let shown = k ?? Skin.at(app.now, city: app.city)
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
         return Button {
             withAnimation(.easeInOut(duration: 0.6)) {
                 if let k { app.s.autoSkin = false; app.s.skin = k } else { app.s.autoSkin = true }
             }
         } label: {
-            VStack(spacing: 8) {
-                ZStack {
+            VStack(spacing: 7) {
+                ZStack(alignment: .topTrailing) {
                     SkyBackground(skin: shown, showMoon: false)
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 84)
+                        .clipShape(shape)
                     Image(systemName: k == nil ? "wand.and.stars" : shown.symbol)
                         .symbolRenderingMode(.multicolor)
                         .font(.system(size: 22))
                         .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if on {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.white, app.skin.gold)
+                            .padding(6)
+                            .transition(.scale.combined(with: .opacity))
+                    }
                 }
-                .frame(width: 72, height: 96)
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(on ? Color.white : Color.white.opacity(0.2), lineWidth: on ? 2.5 : 0.8))
-                .scaleEffect(on ? 1.04 : 1)
+                .frame(height: 84)
+                .overlay(shape.strokeBorder(on ? Color.white : Color.white.opacity(0.18), lineWidth: on ? 2 : 0.8))
+                .shadow(color: .black.opacity(on ? 0.25 : 0.1), radius: on ? 10 : 4, y: 3)
                 Text(k?.name ?? "حيّة").rawhText(13, on ? .bold : .medium).foregroundStyle(on ? app.skin.text : app.skin.sub)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressScale())
     }
 }
 
@@ -6743,15 +6766,18 @@ struct PrayerProvider: AppIntentTimelineProvider {
     }
     func timeline(for configuration: PrayerWidgetIntent, in context: Context) async -> Timeline<PrayerEntry> {
         let city = DB.city(configuration.city.rawValue)
-        var entries: [PrayerEntry] = [.make(Date(), city)]
-        var t = Date()
-        // سطر جديد بعد كل صلاة، ليوم كامل
+        let now = Date()
+        // تحديث بعد كل صلاة، وكل نصف ساعة حتى يتبدّل لون السماء مع الوقت
+        var dates: [Date] = [now]
+        var t = now
         for _ in 0..<6 {
             let n = PrayerTimes.next(after: t, city: city)
             t = n.date.addingTimeInterval(1)
-            entries.append(.make(t, city))
+            dates.append(t)
         }
-        return Timeline(entries: entries, policy: .after(t))
+        for i in 1...36 { dates.append(now.addingTimeInterval(Double(i) * 1800)) }
+        let entries = dates.sorted().map { PrayerEntry.make($0, city) }
+        return Timeline(entries: entries, policy: .after(dates.max() ?? now.addingTimeInterval(3600)))
     }
 }
 
@@ -6891,7 +6917,7 @@ struct DhikrWidgetView: View {
                     Text(entry.item.title).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(WTheme.gold)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .containerBackground(for: .widget) { WTheme.background }
+                .containerBackground(for: .widget) { WTheme.sky(entry.date, DB.city("riyadh")) }
             }
         }
         .environment(\.layoutDirection, .rightToLeft)
@@ -6915,11 +6941,12 @@ struct DhikrWidget: Widget {
 struct PrayerLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: PrayerActivityAttributes.self) { context in
+            let k = Skin.before(context.state.key)
             HStack(spacing: 14) {
                 ZStack {
-                    SixStar().stroke(WTheme.gold, lineWidth: 1.6)
+                    SixStar().stroke(k.gold, lineWidth: 1.6)
                     Image(systemName: PrayerTimes.symbols[context.state.key] ?? "sun.max.fill")
-                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(WTheme.gold)
+                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(k.gold)
                 }
                 .frame(width: 46, height: 46)
                 VStack(alignment: .leading, spacing: 2) {
@@ -6929,14 +6956,16 @@ struct PrayerLiveActivity: Widget {
                 Spacer()
                 Text(timerInterval: context.state.start...context.state.date, countsDown: true)
                     .font(.system(size: 26, weight: .bold)).monospacedDigit()
-                    .foregroundStyle(WTheme.gold)
+                    .foregroundStyle(k.gold)
                     .multilineTextAlignment(.trailing)
-                    .frame(width: 96)
+                    .frame(width: 100)
             }
             .padding(16)
+            .background(LinearGradient(colors: [k.bg, k.mid, k.bg2.opacity(0.9)], startPoint: .topLeading, endPoint: .bottomTrailing))
             .environment(\.layoutDirection, .rightToLeft)
-            .activityBackgroundTint(Color(hex: 0x0A2620))
-            .activitySystemActionForegroundColor(WTheme.gold)
+            .environment(\.locale, Locale(identifier: "ar_SA"))
+            .activityBackgroundTint(k.bg)
+            .activitySystemActionForegroundColor(k.gold)
             .widgetURL(RawhLink.prayer)
         } dynamicIsland: { context in
             DynamicIsland {
