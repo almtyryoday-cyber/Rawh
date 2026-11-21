@@ -22,6 +22,9 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen librsvg
 
+      - name: Metal toolchain (للغيوم والقمر)
+        run: xcodebuild -downloadComponent MetalToolchain || echo "Metal toolchain already available"
+
       - name: Create iOS project
         run: |
           mkdir -p ios/Shared ios/RawhWidgets ios/Rawh/Assets.xcassets/AppIcon.appiconset ios/Rawh/Assets.xcassets/LaunchBG.colorset
@@ -30,7 +33,7 @@ jobs:
           if [ -z "$SRC" ]; then echo "::error::Rawh.swift not found in the repo"; exit 1; fi
           echo "Using source: $SRC"
           # one file, three parts: shared code / the app / the widgets
-          awk '/^\/\/ ===== SHARED =====/ {f="ios/Shared/Shared.swift"} /^\/\/ ===== APP =====/ {f="ios/Rawh/App.swift"} /^\/\/ ===== WIDGET =====/ {f="ios/RawhWidgets/Widgets.swift"} f {print > f}' "$SRC"
+          awk '/^\/\/ ===== SHARED =====/ {f="ios/Shared/Shared.swift"} /^\/\/ ===== APP =====/ {f="ios/Rawh/App.swift"} /^\/\/ ===== WIDGET =====/ {f="ios/RawhWidgets/Widgets.swift"} /^\/\/ ===== METAL =====/ {f="ios/Rawh/Sky.metal"} f {print > f}' "$SRC"
           for f in ios/Shared/Shared.swift ios/Rawh/App.swift ios/RawhWidgets/Widgets.swift; do
             if [ ! -s "$f" ]; then echo "::error::missing section in Rawh.swift: $f"; exit 1; fi
             echo "$f: $(wc -l < "$f") lines"
@@ -103,8 +106,8 @@ jobs:
                 path: Rawh/Info.plist
                 properties:
                   CFBundleDisplayName: "رَوْح"
-                  CFBundleShortVersionString: "5.0"
-                  CFBundleVersion: "11"
+                  CFBundleShortVersionString: "5.1"
+                  CFBundleVersion: "12"
                   NSSupportsLiveActivities: true
                   CFBundleURLTypes:
                     - CFBundleURLName: com.rawh.adhkar
@@ -141,8 +144,8 @@ jobs:
                 path: RawhWidgets/Info.plist
                 properties:
                   CFBundleDisplayName: "رَوْح"
-                  CFBundleShortVersionString: "5.0"
-                  CFBundleVersion: "11"
+                  CFBundleShortVersionString: "5.1"
+                  CFBundleVersion: "12"
                   NSExtension:
                     NSExtensionPointIdentifier: com.apple.widgetkit-extension
               settings:
