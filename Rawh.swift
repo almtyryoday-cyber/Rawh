@@ -2312,6 +2312,8 @@ struct Ayah: Codable, Identifiable, Hashable {
     let number: Int
     let text: String
     let numberInSurah: Int
+    let page: Int?          // صفحة مصحف المدينة
+    let juz: Int?
     var id: Int { number }
 }
 
@@ -2509,6 +2511,78 @@ struct SurahView: View {
     @State private var ayahs: [Ayah] = []
     @State private var failed = false
     @State private var selected: Ayah? = nil
+    @AppStorage("rawh.quran.mushaf") private var mushaf = true
+
+    /// صفحة من المصحف: آياتها مع ترتيبها في السورة
+    private struct MushafPage: Identifiable {
+        let id: Int
+        let juz: Int?
+        var items: [(index: Int, ayah: Ayah)]
+    }
+    private var pages: [MushafPage] {
+        var out: [MushafPage] = []
+        for (i, a) in ayahs.enumerated() {
+            let pg = a.page ?? 0
+            if out.last?.id == pg { out[out.count - 1].items.append((index: i, ayah: a)) }
+            else { out.append(MushafPage(id: pg, juz: a.juz, items: [(index: i, ayah: a)])) }
+        }
+        return out
+    }
+
+    /// نص الصفحة متصلًا، وبين الآيات أرقامها ﴿١﴾ (الرقم يُضغط)
+    private func pageText(_ p: MushafPage) -> Text {
+        var s = AttributedString()
+        for item in p.items {
+            var body = AttributedString(display(item.ayah) + " ")
+            if audio.playingId == playId && audio.index == item.index {
+                body[AttributeScopes.SwiftUIAttributes.BackgroundColorAttribute.self] = app.skin.gold.opacity(0.22)
+            }
+            let marked = app.s.lastSurah == info.number && app.s.lastAyah == item.ayah.numberInSurah
+            var mark = AttributedString("\u{FD3F}\(AR.n(item.ayah.numberInSurah))\u{FD3E}" + (marked ? "\u{25C6}" : ""))
+            mark[AttributeScopes.FoundationAttributes.LinkAttribute.self] = URL(string: "rawh-ayah://\(item.index)")
+            s += body
+            s += mark
+            s += AttributedString(" ")
+        }
+        return Text(s)
+    }
+
+    private func scrollId(_ i: Int) -> AnyHashable {
+        guard i < ayahs.count else { return AnyHashable(0) }
+        return mushaf ? AnyHashable("p\(ayahs[i].page ?? 0)") : AnyHashable(ayahs[i].id)
+    }
+
+    private func pageView(_ p: MushafPage, first: Bool) -> some View {
+        VStack(spacing: 14) {
+            if let j = p.juz {
+                HStack {
+                    Text("الجزء \(AR.n(j))").rawhText(11.5, .semibold).foregroundStyle(app.skin.gold)
+                    Spacer()
+                    Text(info.plainName).rawhText(11.5, .semibold).foregroundStyle(app.skin.gold)
+                }
+            }
+            pageText(p)
+                .rawhText(24 * app.s.textScale, .regular)
+                .lineSpacing(15 * app.s.textScale)
+                .foregroundStyle(app.skin.text)
+                .tint(app.skin.gold)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                Rectangle().fill(app.skin.gold.opacity(0.4)).frame(height: 0.7)
+                if p.id > 0 {
+                    Text(AR.n(p.id)).rawhText(12, .semibold).foregroundStyle(app.skin.sub)
+                } else {
+                    StarBurst().fill(app.skin.gold).frame(width: 8, height: 8)
+                }
+                Rectangle().fill(app.skin.gold.opacity(0.4)).frame(height: 0.7)
+            }
+        }
+        .padding(.horizontal, 18).padding(.vertical, 16)
+        .surface(20, skin: app.skin)
+        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).strokeBorder(app.skin.gold.opacity(0.25), lineWidth: 0.8).padding(5))
+    }
 
     static let bismillah = "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ"
     private var playId: String { "surah:\(info.number)" }
@@ -2562,6 +2636,19 @@ struct SurahView: View {
                             } else {
                                 ProgressView().tint(app.skin.gold).padding(40)
                             }
+                        } else if mushaf {
+                            LazyVStack(spacing: 14) {
+                                ForEach(Array(pages.enumerated()), id: \.element.id) { n, p in
+                                    pageView(p, first: n == 0).id(AnyHashable("p\(p.id)"))
+                                }
+                            }
+                            .environment(\.openURL, OpenURLAction { url in
+                                if url.scheme == "rawh-ayah", let i = Int(url.host ?? ""), i < ayahs.count {
+                                    selected = ayahs[i]
+                                    return .handled
+                                }
+                                return .systemAction
+                            })
                         } else {
                             LazyVStack(spacing: 10) {
                                 ForEach(Array(ayahs.enumerated()), id: \.element.id) { i, a in
@@ -2588,7 +2675,7 @@ struct SurahView: View {
                                     .surface(18, skin: app.skin, tint: current ? app.skin.gold.opacity(0.3) : nil, stroke: current ? app.skin.gold.opacity(0.7) : nil)
                                     .contentShape(Rectangle())
                                     .onTapGesture { selected = a }
-                                    .id(a.id)
+                                    .id(AnyHashable(a.id))
                                 }
                             }
                         }
@@ -2598,12 +2685,12 @@ struct SurahView: View {
                 }
                 .onChange(of: audio.index) { _, i in
                     if audio.playingId == playId, i < ayahs.count {
-                        withAnimation(.easeInOut(duration: 0.5)) { proxy.scrollTo(ayahs[i].id, anchor: .center) }
+                        withAnimation(.easeInOut(duration: 0.5)) { proxy.scrollTo(scrollId(i), anchor: mushaf ? .top : .center) }
                     }
                 }
                 .onChange(of: ayahs.count) { _, _ in
-                    if app.s.lastSurah == info.number, app.s.lastAyah > 1, let a = ayahs.first(where: { $0.numberInSurah == app.s.lastAyah }) {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { proxy.scrollTo(a.id, anchor: .top) }
+                    if app.s.lastSurah == info.number, app.s.lastAyah > 1, let i = ayahs.firstIndex(where: { $0.numberInSurah == app.s.lastAyah }) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { proxy.scrollTo(scrollId(i), anchor: .top) }
                     }
                 }
             }
@@ -2611,6 +2698,15 @@ struct SurahView: View {
         .navigationTitle(info.plainName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { withAnimation(.snappy) { mushaf.toggle() } } label: {
+                    Image(systemName: mushaf ? "list.bullet.rectangle" : "book.pages")
+                        .font(.system(size: 18))
+                        .foregroundStyle(app.skin.gold)
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .accessibilityLabel(mushaf ? "عرض آية آية" : "عرض المصحف")
+            }
             ToolbarItem(placement: .topBarLeading) {
                 Button {
                     if audio.playingId == playId { audio.stop() } else { play(from: 0) }
