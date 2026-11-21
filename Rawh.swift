@@ -83,7 +83,7 @@ enum DB {
     }()
     static var cats: [AdhkarCategory] { data.cats }
     static func cat(_ id: String) -> AdhkarCategory? { data.cats.first { $0.id == id } }
-    static func city(_ id: String) -> City { data.cities.first { $0.id == id } ?? data.cities[0] }
+    static func city(_ id: String) -> City { Cities.all.first { $0.id == id } ?? Cities.all[0] }
     static var allDhikr: [CatDhikr] { data.cats.flatMap { c in c.items.map { CatDhikr(cat: c, dhikr: $0) } } }
 }
 
@@ -176,6 +176,108 @@ enum Skin: String, CaseIterable, Identifiable, Codable {
     var onGold: Color { self == .sand ? Color(hex: 0xFFF8EA) : Color(hex: 0x0A2018) }
 }
 
+
+// MARK: - مدن المملكة (مرتّبة على المناطق)
+
+struct CityRegion: Identifiable {
+    let id: String
+    let name: String
+    let cities: [City]
+}
+
+enum Cities {
+    static let regions: [CityRegion] = [
+        CityRegion(id: "riyadh_r", name: "منطقة الرياض", cities: [
+            City(id: "riyadh", n: "الرياض", lat: 24.7136, lng: 46.6753),
+            City(id: "kharj", n: "الخرج", lat: 24.1556, lng: 47.3346),
+            City(id: "majmaah", n: "المجمعة", lat: 25.9039, lng: 45.3456),
+            City(id: "dawadmi", n: "الدوادمي", lat: 24.5075, lng: 44.3923),
+            City(id: "zulfi", n: "الزلفي", lat: 26.2994, lng: 44.8154),
+            City(id: "shaqra", n: "شقراء", lat: 25.2483, lng: 45.251),
+            City(id: "afif", n: "عفيف", lat: 23.9065, lng: 42.9172),
+            City(id: "quwayiyah", n: "القويعية", lat: 24.0737, lng: 45.2806),
+            City(id: "wadi", n: "وادي الدواسر", lat: 20.4607, lng: 44.7814)
+        ]),
+        CityRegion(id: "makkah_r", name: "منطقة مكة المكرمة", cities: [
+            City(id: "makkah", n: "مكة المكرمة", lat: 21.3891, lng: 39.8579),
+            City(id: "jeddah", n: "جدة", lat: 21.4858, lng: 39.1925),
+            City(id: "taif", n: "الطائف", lat: 21.2703, lng: 40.4158),
+            City(id: "rabigh", n: "رابغ", lat: 22.7986, lng: 39.0349),
+            City(id: "qunfudhah", n: "القنفذة", lat: 19.1264, lng: 41.0789),
+            City(id: "lith", n: "الليث", lat: 20.15, lng: 40.2667)
+        ]),
+        CityRegion(id: "madinah_r", name: "منطقة المدينة المنورة", cities: [
+            City(id: "madinah", n: "المدينة المنورة", lat: 24.5247, lng: 39.5692),
+            City(id: "yanbu", n: "ينبع", lat: 24.0895, lng: 38.0618),
+            City(id: "ula", n: "العُلا", lat: 26.6085, lng: 37.9232),
+            City(id: "badr", n: "بدر", lat: 23.78, lng: 38.7906)
+        ]),
+        CityRegion(id: "qassim_r", name: "منطقة القصيم", cities: [
+            City(id: "buraydah", n: "بريدة", lat: 26.326, lng: 43.975),
+            City(id: "unayzah", n: "عنيزة", lat: 26.084, lng: 43.994),
+            City(id: "rass", n: "الرس", lat: 25.8694, lng: 43.4973),
+            City(id: "bukayriyah", n: "البكيرية", lat: 26.1394, lng: 43.6575)
+        ]),
+        CityRegion(id: "east_r", name: "المنطقة الشرقية", cities: [
+            City(id: "dammam", n: "الدمام", lat: 26.4207, lng: 50.0888),
+            City(id: "khobar", n: "الخبر", lat: 26.2172, lng: 50.1971),
+            City(id: "dhahran", n: "الظهران", lat: 26.2361, lng: 50.0393),
+            City(id: "ahsa", n: "الأحساء", lat: 25.3833, lng: 49.5866),
+            City(id: "jubail", n: "الجبيل", lat: 27.0174, lng: 49.6225),
+            City(id: "qatif", n: "القطيف", lat: 26.5196, lng: 50.0115),
+            City(id: "hafar", n: "حفر الباطن", lat: 28.4328, lng: 45.9708),
+            City(id: "khafji", n: "الخفجي", lat: 28.4391, lng: 48.4913)
+        ]),
+        CityRegion(id: "asir_r", name: "منطقة عسير", cities: [
+            City(id: "abha", n: "أبها", lat: 18.2164, lng: 42.5053),
+            City(id: "khamis", n: "خميس مشيط", lat: 18.3, lng: 42.7333),
+            City(id: "bisha", n: "بيشة", lat: 19.99, lng: 42.59),
+            City(id: "namas", n: "النماص", lat: 19.122, lng: 42.13),
+            City(id: "muhayil", n: "محايل عسير", lat: 18.545, lng: 42.05)
+        ]),
+        CityRegion(id: "tabuk_r", name: "منطقة تبوك", cities: [
+            City(id: "tabuk", n: "تبوك", lat: 28.3835, lng: 36.5662),
+            City(id: "wajh", n: "الوجه", lat: 26.2455, lng: 36.4525),
+            City(id: "duba", n: "ضباء", lat: 27.351, lng: 35.69),
+            City(id: "tayma", n: "تيماء", lat: 27.629, lng: 38.55)
+        ]),
+        CityRegion(id: "hail_r", name: "منطقة حائل", cities: [
+            City(id: "hail", n: "حائل", lat: 27.5114, lng: 41.7208),
+            City(id: "baqaa", n: "بقعاء", lat: 27.889, lng: 42.406)
+        ]),
+        CityRegion(id: "north_r", name: "منطقة الحدود الشمالية", cities: [
+            City(id: "arar", n: "عرعر", lat: 30.9753, lng: 41.0381),
+            City(id: "rafha", n: "رفحاء", lat: 29.6264, lng: 43.4933),
+            City(id: "turaif", n: "طريف", lat: 31.6725, lng: 38.6637)
+        ]),
+        CityRegion(id: "jazan_r", name: "منطقة جازان", cities: [
+            City(id: "jazan", n: "جازان", lat: 16.8892, lng: 42.5511),
+            City(id: "sabya", n: "صبيا", lat: 17.1495, lng: 42.6254),
+            City(id: "abuarish", n: "أبو عريش", lat: 16.969, lng: 42.833),
+            City(id: "samtah", n: "صامطة", lat: 16.596, lng: 42.944)
+        ]),
+        CityRegion(id: "najran_r", name: "منطقة نجران", cities: [
+            City(id: "najran", n: "نجران", lat: 17.565, lng: 44.2289),
+            City(id: "sharurah", n: "شرورة", lat: 17.485, lng: 47.115)
+        ]),
+        CityRegion(id: "baha_r", name: "منطقة الباحة", cities: [
+            City(id: "baha", n: "الباحة", lat: 20.0129, lng: 41.4677),
+            City(id: "baljurashi", n: "بلجرشي", lat: 19.858, lng: 41.563)
+        ]),
+        CityRegion(id: "jouf_r", name: "منطقة الجوف", cities: [
+            City(id: "sakaka", n: "سكاكا", lat: 29.9697, lng: 40.2064),
+            City(id: "dumah", n: "دومة الجندل", lat: 29.8117, lng: 39.8689),
+            City(id: "qurayyat", n: "القريات", lat: 31.3317, lng: 37.3428)
+        ])
+    ]
+    static let all: [City] = regions.flatMap { $0.cities }
+    static func region(of id: String) -> String { regions.first { r in r.cities.contains { $0.id == id } }?.name ?? "" }
+    /// أقرب مدينة لإحداثيات معيّنة
+    static func nearest(lat: Double, lng: Double) -> City {
+        func d(_ c: City) -> Double { let x = (c.lng - lng) * cos(lat * Double.pi / 180); let y = c.lat - lat; return x * x + y * y }
+        return all.min { d($0) < d($1) } ?? all[0]
+    }
+}
 
 // MARK: - مواقيت الصلاة (طريقة أم القرى)
 
@@ -515,6 +617,7 @@ enum DhikrPool {
 
     /// ذكر الساعة: يتغيّر كل ساعة، وثابت لكل الأجهزة في نفس الساعة
     static func item(at date: Date) -> Item {
+        guard !all.isEmpty else { return Item(title: "سبّح", text: "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ", cat: nil) }
         let hours = Int(date.timeIntervalSince1970 / 3600)
         return all[((hours * 7) % all.count + all.count) % all.count]
     }
@@ -576,6 +679,11 @@ struct Saved: Codable {
     var introSeen: Bool = false
     var lastSurah: Int = 0
     var lastAyah: Int = 0
+    var prayed: [String: [String]] = [:]    // يوم → الصلوات اللي صلّيتها
+    var khatmaDays: Int = 30                // مدة الختمة بالأيام
+    var khatmaStart: String = ""            // يوم بداية الختمة (فاضي = ما بدأت)
+    var khatmaPage: Int = 0                 // آخر صفحة قرأتها (من ٦٠٤)
+    var khatmaCount: Int = 0                // عدد الختمات المكتملة
 
     init() {}
 
@@ -603,6 +711,11 @@ struct Saved: Codable {
         introSeen = (try? c.decode(Bool.self, forKey: .introSeen)) ?? d.introSeen
         lastSurah = (try? c.decode(Int.self, forKey: .lastSurah)) ?? d.lastSurah
         lastAyah = (try? c.decode(Int.self, forKey: .lastAyah)) ?? d.lastAyah
+        prayed = (try? c.decode([String: [String]].self, forKey: .prayed)) ?? d.prayed
+        khatmaDays = (try? c.decode(Int.self, forKey: .khatmaDays)) ?? d.khatmaDays
+        khatmaStart = (try? c.decode(String.self, forKey: .khatmaStart)) ?? d.khatmaStart
+        khatmaPage = (try? c.decode(Int.self, forKey: .khatmaPage)) ?? d.khatmaPage
+        khatmaCount = (try? c.decode(Int.self, forKey: .khatmaCount)) ?? d.khatmaCount
     }
 }
 
@@ -1562,6 +1675,7 @@ struct HomeView: View {
                         header
                         wirdCard
                         prayerCard
+                        PrayerCheckStrip()
                         verseCard
                         SectionTitle(title: "الأذكار", trailing: "\(AR.n(DB.cats.count)) أقسام")
                         LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
@@ -1577,12 +1691,10 @@ struct HomeView: View {
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
-            .sheet(isPresented: $showSettings) { SettingsView().environmentObject(app) }
-            .sheet(isPresented: $showSearch) { SearchView().environmentObject(app) }
+            .sheet(isPresented: $showSettings) { SettingsView().environmentObject(app).rawhSheet(app.skin) }
+            .sheet(isPresented: $showSearch) { SearchView().environmentObject(app).rawhSheet(app.skin) }
+            .sheet(isPresented: $showCity) { CityPickerSheet().environmentObject(app).rawhSheet(app.skin) }
             .fullScreenCover(item: $reader) { c in ReaderView(cat: c, startFocus: focus).environmentObject(app) }
-            .confirmationDialog("اختر مدينتك", isPresented: $showCity, titleVisibility: .visible) {
-                ForEach(DB.data.cities) { c in Button(c.n) { app.s.cityId = c.id; Reminders.schedule(app.s) } }
-            }
         }
     }
 
@@ -1825,7 +1937,7 @@ struct ReaderView: View {
         }
         .onAppear { focus = startFocus; page = firstOpen()?.id ?? cat.items.first?.id }
         .onDisappear { AudioPlayer.shared.stop() }
-        .sheet(item: $share) { d in ShareSheet(dhikr: d, cat: cat).environmentObject(app).presentationDetents([.large]) }
+        .sheet(item: $share) { d in ShareSheet(dhikr: d, cat: cat).environmentObject(app).rawhSheet(app.skin) }
         .sensoryFeedback(.success, trigger: completed)
         .confirmationDialog("تصفير عدّاد هذا القسم؟", isPresented: $confirmReset, titleVisibility: .visible) {
             Button("تصفير", role: .destructive) { resetTick += 1; withAnimation { app.reset(cat) }; page = cat.items.first?.id }
@@ -2785,7 +2897,7 @@ struct Heatmap: View {
 
 // MARK: - المزيد
 
-enum MoreRoute: Hashable { case names, duas, occasions, reminders, qibla, favorites }
+enum MoreRoute: Hashable { case names, duas, occasions, reminders, qibla, favorites, prayers, khatma, calendar, zakat }
 
 struct MoreView: View {
     @EnvironmentObject var app: AppState
@@ -2806,13 +2918,21 @@ struct MoreView: View {
                         }
                         .padding(.top, 14)
 
-                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                        group("عبادتي") {
+                            hub("صلواتي", "\(AR.n(app.prayedCount())) من ٥ اليوم · \(AR.n(app.prayerStreak)) يوم متتالي", symbol: "checkmark.seal.fill") { path.append(.prayers) }
+                            hub("ختمة القرآن", app.s.khatmaStart.isEmpty ? "خطة يومية لختم المصحف" : "صفحة \(AR.n(app.s.khatmaPage)) من ٦٠٤", symbol: "book.pages.fill") { path.append(.khatma) }
+                            hub("التقويم الهجري", AR.hijriString(app.now), symbol: "calendar") { path.append(.calendar) }
+                            hub("حاسبة الزكاة", "النصاب وربع العشر بسهولة", symbol: "banknote.fill") { path.append(.zakat) }
+                        }
+                        group("أذكار وأدعية") {
                             hub("أسماء الله الحسنى", "تسعة وتسعون اسمًا", custom: AnyView(EightStar().stroke(app.skin.gold, lineWidth: 1.6).frame(width: 24, height: 24))) { path.append(.names) }
                             hub("أدعية من القرآن", "\(AR.n(DB.data.duas.count)) دعاءً بنص المصحف", symbol: "hands.and.sparkles.fill") { path.append(.duas) }
-                            hub("المناسبات الإسلامية", "رمضان والأعياد والأيام الفاضلة", symbol: "moon.circle.fill") { path.append(.occasions) }
-                            hub("التذكيرات", "إشعارات للأذكار والصلاة والصيام", symbol: "bell.fill", wiggle: true) { path.append(.reminders) }
-                            hub("اتجاه القبلة", "بوصلة تتوجه حين تتجه", symbol: "location.north.circle.fill") { path.append(.qibla) }
                             hub("المحفوظة", "\(AR.n(app.s.favorites.count)) ذكرًا محفوظًا", symbol: "bookmark.fill") { path.append(.favorites) }
+                            hub("المناسبات الإسلامية", "رمضان والأعياد والأيام الفاضلة", symbol: "moon.circle.fill") { path.append(.occasions) }
+                        }
+                        group("أدوات") {
+                            hub("التذكيرات", "إشعارات بالأذكار والصلاة والصيام", symbol: "bell.fill", wiggle: true) { path.append(.reminders) }
+                            hub("اتجاه القبلة", "بوصلة تتوجه حين تتجه", symbol: "location.north.circle.fill") { path.append(.qibla) }
                             hub("المظهر والإعدادات", "الألوان والخط والمدينة", symbol: "paintpalette.fill") { showSettings = true }
                             hub("المقدمة", "شاهد التعريف بالتطبيق", symbol: "play.fill") { showIntro = true }
                         }
@@ -2847,12 +2967,23 @@ struct MoreView: View {
                     case .reminders: RemindersView()
                     case .qibla: QiblaView(city: app.city)
                     case .favorites: FavoritesView()
+                    case .prayers: PrayerLogView()
+                    case .khatma: KhatmaView()
+                    case .calendar: HijriCalendarView()
+                    case .zakat: ZakatView()
                     }
                 }
                 .environmentObject(app)
             }
-            .sheet(isPresented: $showSettings) { SettingsView().environmentObject(app) }
+            .sheet(isPresented: $showSettings) { SettingsView().environmentObject(app).rawhSheet(app.skin) }
             .fullScreenCover(isPresented: $showIntro) { IntroView().environmentObject(app) }
+        }
+    }
+
+    private func group<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionTitle(title: title)
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) { content() }
         }
     }
 
@@ -3170,8 +3301,8 @@ struct RemindersView: View {
             Text("أوقات الأذكار والصلاة محسوبة لمدينة \(app.city.n). اضغط على الإشعار ليفتح لك القسم مباشرة.").rawhText(12).foregroundStyle(app.skin.sub).multilineTextAlignment(.center)
         }
         .sensoryFeedback(.selection, trigger: bell)
-        .sheet(isPresented: $showRecorder) { VoiceRecorderView().environmentObject(app) }
-        .sheet(isPresented: $showEleven) { ElevenLabsView().environmentObject(app) }
+        .sheet(isPresented: $showRecorder) { VoiceRecorderView().environmentObject(app).rawhSheet(app.skin) }
+        .sheet(isPresented: $showEleven) { ElevenLabsView().environmentObject(app).rawhSheet(app.skin) }
     }
 }
 
@@ -3261,7 +3392,7 @@ struct FavoritesView: View {
                 }
             }
         }
-        .sheet(item: $share) { s in ShareSheet(dhikr: s.dhikr, cat: s.cat).environmentObject(app) }
+        .sheet(item: $share) { s in ShareSheet(dhikr: s.dhikr, cat: s.cat).environmentObject(app).rawhSheet(app.skin) }
     }
 }
 
@@ -3405,13 +3536,7 @@ struct SettingsView: View {
                         }
 
                         SectionTitle(title: "المدينة")
-                        Card(padding: 6) {
-                            Picker("المدينة", selection: Binding(get: { app.s.cityId }, set: { app.s.cityId = $0; Reminders.schedule(app.s) })) {
-                                ForEach(DB.data.cities) { Text($0.n).tag($0.id) }
-                            }
-                            .pickerStyle(.wheel)
-                            .frame(height: 130)
-                        }
+                        CityRowButton()
                         Text("تُستخدم لحساب مواقيت الصلاة وأوقات التذكير").rawhText(12).foregroundStyle(app.skin.sub)
                     }
                     .padding(.horizontal, 18)
@@ -3423,6 +3548,806 @@ struct SettingsView: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("تم") { dismiss() }.tint(app.skin.gold) } }
         }
         .preferredColorScheme(app.skin.scheme)
+    }
+}
+
+// MARK: - شكل موحّد للنوافذ المنبثقة
+
+extension View {
+    /// كل النوافذ المنبثقة بنفس الخلفية والحواف والمؤشر
+    func rawhSheet(_ skin: Skin, detents: Set<PresentationDetent> = [.large]) -> some View {
+        self
+            .presentationDetents(detents)
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(32)
+            .presentationBackground {
+                LinearGradient(colors: [skin.bg, skin.bg2], startPoint: .top, endPoint: .bottom)
+            }
+            .preferredColorScheme(skin.scheme)
+    }
+}
+
+// MARK: - تحديد المدينة من الموقع
+
+final class CityLocator: NSObject, ObservableObject, CLLocationManagerDelegate {
+    enum Status: Equatable { case idle, locating, denied, failed }
+    @Published var status: Status = .idle
+    var onCity: ((City) -> Void)?
+    private let lm = CLLocationManager()
+
+    override init() {
+        super.init()
+        lm.delegate = self
+        lm.desiredAccuracy = kCLLocationAccuracyKilometer
+    }
+
+    func locate() {
+        switch lm.authorizationStatus {
+        case .denied, .restricted: status = .denied
+        case .notDetermined: status = .locating; lm.requestWhenInUseAuthorization()
+        default: status = .locating; lm.requestLocation()
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ m: CLLocationManager) {
+        guard status == .locating else { return }
+        switch m.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways: m.requestLocation()
+        case .denied, .restricted: DispatchQueue.main.async { self.status = .denied }
+        default: break
+        }
+    }
+    func locationManager(_ m: CLLocationManager, didUpdateLocations locs: [CLLocation]) {
+        guard let l = locs.last else { return }
+        let c = Cities.nearest(lat: l.coordinate.latitude, lng: l.coordinate.longitude)
+        DispatchQueue.main.async { self.status = .idle; self.onCity?(c) }
+    }
+    func locationManager(_ m: CLLocationManager, didFailWithError error: Error) {
+        DispatchQueue.main.async { self.status = .failed }
+    }
+}
+
+// MARK: - اختيار المدينة
+
+struct CityPickerSheet: View {
+    @EnvironmentObject var app: AppState
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var loc = CityLocator()
+    @State private var q = ""
+    @State private var picked = 0
+
+    private var filtered: [CityRegion] {
+        let k = AR.normalize(q.trimmingCharacters(in: .whitespaces))
+        if k.isEmpty { return Cities.regions }
+        return Cities.regions.compactMap { r in
+            let regionHit = AR.normalize(r.name).contains(k)
+            let cs = r.cities.filter { regionHit || AR.normalize($0.n).contains(k) }
+            return cs.isEmpty ? nil : CityRegion(id: r.id, name: r.name, cities: cs)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                ScreenBackground()
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12, pinnedViews: []) {
+                        if q.isEmpty {
+                            locateCard
+                            current
+                        }
+                        ForEach(filtered) { r in
+                            HStack(spacing: 7) {
+                                StarBurst().fill(app.skin.gold).frame(width: 7, height: 7)
+                                Text(r.name).rawhText(13, .semibold).foregroundStyle(app.skin.gold)
+                            }
+                            .padding(.top, 8).padding(.horizontal, 4)
+                            VStack(spacing: 0) {
+                                ForEach(Array(r.cities.enumerated()), id: \.element.id) { i, c in
+                                    if i > 0 { Rectangle().fill(app.skin.line).frame(height: 0.6).padding(.leading, 16) }
+                                    row(c)
+                                }
+                            }
+                            .surface(18, skin: app.skin)
+                        }
+                        if filtered.isEmpty {
+                            VStack(spacing: 8) {
+                                Image(systemName: "mappin.slash").font(.system(size: 30)).foregroundStyle(app.skin.sub)
+                                Text("ما لقينا مدينة بهذا الاسم").rawhText(14).foregroundStyle(app.skin.sub)
+                            }
+                            .frame(maxWidth: .infinity).padding(.top, 40)
+                        }
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 30)
+                }
+                .scrollDismissesKeyboard(.immediately)
+            }
+            .searchable(text: $q, placement: .navigationBarDrawer(displayMode: .always), prompt: "ابحث عن مدينة أو منطقة")
+            .navigationTitle("اختر مدينتك")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("تم") { dismiss() }.tint(app.skin.gold) } }
+        }
+        .sensoryFeedback(.selection, trigger: picked)
+        .onAppear { loc.onCity = { c in choose(c) } }
+    }
+
+    private var locateCard: some View {
+        Button { loc.locate() } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle().fill(app.skin.gold.opacity(0.16))
+                    if loc.status == .locating { ProgressView().tint(app.skin.gold) }
+                    else { Image(systemName: "location.fill").foregroundStyle(app.skin.gold).symbolEffect(.bounce, value: picked) }
+                }
+                .frame(width: 42, height: 42)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("حدّد مدينتي تلقائيًا").rawhText(15, .bold).foregroundStyle(app.skin.text)
+                    Text(locateNote).rawhText(12).foregroundStyle(loc.status == .denied || loc.status == .failed ? Color.orange : app.skin.sub)
+                }
+                Spacer()
+                Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold)).foregroundStyle(app.skin.sub)
+            }
+            .padding(14)
+            .surface(18, skin: app.skin, highlight: true)
+        }
+        .buttonStyle(PressScale())
+        .disabled(loc.status == .locating)
+    }
+
+    private var locateNote: String {
+        switch loc.status {
+        case .idle: return "نختار أقرب مدينة لموقعك"
+        case .locating: return "نحدّد موقعك…"
+        case .denied: return "اسمح بالموقع من الإعدادات ← رَوْح ← الموقع"
+        case .failed: return "ما قدرنا نحدد موقعك، جرّب مرة ثانية"
+        }
+    }
+
+    private var current: some View {
+        let c = app.city
+        let nx = PrayerTimes.next(after: app.now, city: c)
+        return HStack(spacing: 12) {
+            Image(systemName: "mappin.circle.fill").font(.system(size: 30)).foregroundStyle(app.skin.gold).symbolRenderingMode(.hierarchical)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("مدينتك الحالية").rawhText(11.5).foregroundStyle(app.skin.sub)
+                Text(c.n).rawhText(18, .bold).foregroundStyle(app.skin.text)
+                Text(Cities.region(of: c.id)).rawhText(12).foregroundStyle(app.skin.sub)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(PrayerTimes.names[nx.key] ?? "").rawhText(12).foregroundStyle(app.skin.sub)
+                Text(AR.timeF.string(from: nx.date)).rawhText(16, .bold).foregroundStyle(app.skin.gold)
+            }
+        }
+        .padding(14)
+        .surface(18, skin: app.skin)
+    }
+
+    private func row(_ c: City) -> some View {
+        let on = c.id == app.s.cityId
+        let t = PrayerTimes.compute(for: app.now, city: c)
+        return Button { choose(c) } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(c.n).rawhText(16, on ? .bold : .semibold).foregroundStyle(on ? app.skin.gold : app.skin.text)
+                    Text("الفجر \(AR.timeF.string(from: t.date("fajr", on: app.now)))  ·  المغرب \(AR.timeF.string(from: t.date("maghrib", on: app.now)))")
+                        .rawhText(11.5).foregroundStyle(app.skin.sub)
+                }
+                Spacer()
+                Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 21))
+                    .foregroundStyle(on ? app.skin.gold : app.skin.sub.opacity(0.5))
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func choose(_ c: City) {
+        withAnimation(.snappy) { app.s.cityId = c.id }
+        picked += 1
+        Reminders.schedule(app.s)
+        if PrayerLive.isRunning { PrayerLive.refresh(city: c) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { dismiss() }
+    }
+}
+
+/// سطر يعرض المدينة الحالية ويفتح الاختيار
+struct CityRowButton: View {
+    @EnvironmentObject var app: AppState
+    @State private var show = false
+    var body: some View {
+        Button { show = true } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "mappin.and.ellipse").font(.system(size: 18, weight: .medium)).foregroundStyle(app.skin.gold)
+                    .frame(width: 38, height: 38).background(Circle().fill(app.skin.gold.opacity(0.14)))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(app.city.n).rawhText(16, .bold).foregroundStyle(app.skin.text)
+                    Text(Cities.region(of: app.city.id)).rawhText(12).foregroundStyle(app.skin.sub)
+                }
+                Spacer()
+                Text("تغيير").rawhText(13, .semibold).foregroundStyle(app.skin.gold)
+                Image(systemName: "chevron.left").font(.system(size: 12, weight: .semibold)).foregroundStyle(app.skin.gold)
+            }
+            .padding(14)
+            .surface(18, skin: app.skin)
+        }
+        .buttonStyle(PressScale())
+        .sheet(isPresented: $show) { CityPickerSheet().environmentObject(app).rawhSheet(app.skin) }
+    }
+}
+
+// MARK: - صلواتي (متابعة الصلوات الخمس)
+
+extension AppState {
+    static let fivePrayers = ["fajr", "dhuhr", "asr", "maghrib", "isha"]
+    func prayed(_ k: String, on d: Date = Date()) -> Bool { (s.prayed[AR.dayKey(d)] ?? []).contains(k) }
+    func prayedCount(on d: Date = Date()) -> Int { (s.prayed[AR.dayKey(d)] ?? []).filter { Self.fivePrayers.contains($0) }.count }
+    func togglePrayed(_ k: String) {
+        let key = AR.dayKey()
+        var list = s.prayed[key] ?? []
+        if let i = list.firstIndex(of: k) { list.remove(at: i) } else { list.append(k) }
+        s.prayed[key] = list
+    }
+    /// أيام متتالية صلّيت فيها الخمس
+    var prayerStreak: Int {
+        let cal = AR.gregorian
+        var d = Date()
+        if prayedCount(on: d) < 5 { d = cal.date(byAdding: .day, value: -1, to: d) ?? d }
+        var n = 0
+        while prayedCount(on: d) >= 5, n < 3650 {
+            n += 1
+            d = cal.date(byAdding: .day, value: -1, to: d) ?? d
+        }
+        return n
+    }
+}
+
+/// بطاقة صغيرة في الرئيسية
+struct PrayerCheckStrip: View {
+    @EnvironmentObject var app: AppState
+    @State private var tick = 0
+    var body: some View {
+        let done = app.prayedCount()
+        Card(padding: 14) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(app.skin.gold).symbolEffect(.bounce, value: done)
+                    Text("صلواتي اليوم").rawhText(15, .bold).foregroundStyle(app.skin.text)
+                    Spacer()
+                    Text("\(AR.n(done)) من \(AR.n(5))").rawhText(13, .semibold).foregroundStyle(done == 5 ? app.skin.green : app.skin.sub)
+                        .contentTransition(.numericText())
+                }
+                HStack(spacing: 8) {
+                    ForEach(AppState.fivePrayers, id: \.self) { k in
+                        let on = app.prayed(k)
+                        Button {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) { app.togglePrayed(k) }
+                            tick += 1
+                        } label: {
+                            VStack(spacing: 5) {
+                                Image(systemName: on ? "checkmark.circle.fill" : (PrayerTimes.symbols[k] ?? "circle"))
+                                    .font(.system(size: 20, weight: .medium))
+                                    .symbolRenderingMode(.hierarchical)
+                                    .foregroundStyle(on ? app.skin.onGold : app.skin.gold)
+                                    .contentTransition(.symbolEffect(.replace))
+                                Text(PrayerTimes.names[k] ?? "").rawhText(11.5, .semibold).foregroundStyle(on ? app.skin.onGold : app.skin.sub)
+                            }
+                            .frame(maxWidth: .infinity).padding(.vertical, 9)
+                            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(on ? app.skin.gold : app.skin.gold.opacity(0.08)))
+                        }
+                        .buttonStyle(PressScale())
+                    }
+                }
+            }
+        }
+        .sensoryFeedback(.impact(weight: .light), trigger: tick)
+    }
+}
+
+struct PrayerLogView: View {
+    @EnvironmentObject var app: AppState
+    @State private var burst = 0
+    var body: some View {
+        let t = PrayerTimes.compute(for: app.now, city: app.city)
+        let done = app.prayedCount()
+        SubScreen(title: "صلواتي", subtitle: "سجّل صلواتك يومًا بيوم وحافظ على سلسلتك") {
+            ZStack {
+                Card(highlight: true) {
+                    HStack(spacing: 18) {
+                        ZStack {
+                            ProgressRing(progress: Double(done) / 5, color: app.skin.gold, track: app.skin.gold.opacity(0.15), width: 8)
+                            VStack(spacing: 0) {
+                                Text(AR.n(done)).rawhText(28, .bold).foregroundStyle(app.skin.text).contentTransition(.numericText())
+                                Text("من ٥").rawhText(11).foregroundStyle(app.skin.sub)
+                            }
+                        }
+                        .frame(width: 92, height: 92)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("\(AR.n(app.prayerStreak)) يوم متتالي", systemImage: "flame.fill")
+                                .rawhText(16, .bold).foregroundStyle(app.skin.gold).breathing(app.prayerStreak > 0)
+                            Text(done == 5 ? "أتممت صلوات اليوم، تقبّل الله منك" : "حافظوا على الصلوات والصلاة الوسطى")
+                                .rawhText(13).foregroundStyle(app.skin.sub).fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+                CelebrationBurst(trigger: burst, color: app.skin.gold).allowsHitTesting(false)
+            }
+
+            VStack(spacing: 0) {
+                ForEach(Array(AppState.fivePrayers.enumerated()), id: \.element) { i, k in
+                    if i > 0 { Rectangle().fill(app.skin.line).frame(height: 0.6).padding(.leading, 60) }
+                    let on = app.prayed(k)
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) { app.togglePrayed(k) }
+                        if app.prayedCount() == 5 { burst += 1 }
+                    } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: PrayerTimes.symbols[k] ?? "sun.max")
+                                .font(.system(size: 19)).symbolRenderingMode(.hierarchical).foregroundStyle(app.skin.gold)
+                                .frame(width: 34)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(PrayerTimes.names[k] ?? "").rawhText(16, .bold).foregroundStyle(app.skin.text)
+                                Text(AR.timeF.string(from: t.date(k, on: app.now))).rawhText(12).foregroundStyle(app.skin.sub)
+                            }
+                            Spacer()
+                            Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 26)).foregroundStyle(on ? app.skin.green : app.skin.sub.opacity(0.45))
+                                .contentTransition(.symbolEffect(.replace))
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 13)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .surface(20, skin: app.skin)
+            .sensoryFeedback(.success, trigger: burst)
+
+            SectionTitle(title: "آخر ٧ أيام")
+            Card {
+                HStack(alignment: .bottom, spacing: 6) {
+                    ForEach((0..<7).reversed(), id: \.self) { back in
+                        let d = AR.gregorian.date(byAdding: .day, value: -back, to: app.now) ?? app.now
+                        let n = app.prayedCount(on: d)
+                        VStack(spacing: 6) {
+                            VStack(spacing: 3) {
+                                ForEach(AppState.fivePrayers.reversed(), id: \.self) { k in
+                                    Circle().fill(app.prayed(k, on: d) ? app.skin.gold : app.skin.gold.opacity(0.12)).frame(width: 11, height: 11)
+                                }
+                            }
+                            Text(AR.fmt("EEE").string(from: d)).rawhText(10.5, back == 0 ? .bold : .regular)
+                                .foregroundStyle(back == 0 ? app.skin.gold : app.skin.sub).lineLimit(1).minimumScaleFactor(0.7)
+                            Image(systemName: n == 5 ? "star.fill" : "star").font(.system(size: 9)).foregroundStyle(n == 5 ? app.skin.gold : .clear)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - ختمة القرآن
+
+struct KhatmaView: View {
+    @EnvironmentObject var app: AppState
+    @State private var burst = 0
+    @State private var confirmReset = false
+    static let pages = 604
+    private let plans = [7, 10, 15, 20, 30, 60]
+
+    private var dayIndex: Int {
+        guard let start = AR.keyF.date(from: app.s.khatmaStart) else { return 1 }
+        let d = AR.gregorian.dateComponents([.day], from: AR.gregorian.startOfDay(for: start), to: AR.gregorian.startOfDay(for: app.now)).day ?? 0
+        return max(1, d + 1)
+    }
+    private var perDay: Int { Int((Double(Self.pages) / Double(max(1, app.s.khatmaDays))).rounded(.up)) }
+    private var target: Int { min(Self.pages, perDay * dayIndex) }
+    private var juz: Int { min(30, app.s.khatmaPage / 20 + 1) }
+
+    var body: some View {
+        SubScreen(title: "ختمة القرآن", subtitle: "خطة يومية تعينك على ختم كتاب الله") {
+            if app.s.khatmaStart.isEmpty { setup } else { active }
+            if app.s.khatmaCount > 0 {
+                Card {
+                    HStack {
+                        Image(systemName: "rosette").font(.system(size: 22)).foregroundStyle(app.skin.gold)
+                        Text("ختمات أتممتها").rawhText(15, .semibold).foregroundStyle(app.skin.text)
+                        Spacer()
+                        Text(AR.n(app.s.khatmaCount)).rawhText(22, .bold).foregroundStyle(app.skin.gold)
+                    }
+                }
+            }
+        }
+        .confirmationDialog("إلغاء الختمة الحالية؟", isPresented: $confirmReset, titleVisibility: .visible) {
+            Button("إلغاء الختمة", role: .destructive) { withAnimation { app.s.khatmaStart = ""; app.s.khatmaPage = 0 } }
+        }
+    }
+
+    private var setup: some View {
+        VStack(spacing: 14) {
+            Card(highlight: true) {
+                VStack(spacing: 12) {
+                    Image(systemName: "book.pages.fill").font(.system(size: 38)).foregroundStyle(app.skin.gold).symbolRenderingMode(.hierarchical)
+                    Text("في كم يوم تبي تختم؟").rawhText(18, .bold).foregroundStyle(app.skin.text)
+                    Text("نقسم لك المصحف (٦٠٤ صفحات) على الأيام، ونذكّرك كم باقي.").rawhText(13).foregroundStyle(app.skin.sub).multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+                ForEach(plans, id: \.self) { d in
+                    let on = app.s.khatmaDays == d
+                    Button { withAnimation(.snappy) { app.s.khatmaDays = d } } label: {
+                        VStack(spacing: 3) {
+                            Text("\(AR.n(d)) يوم").rawhText(16, .bold).foregroundStyle(on ? app.skin.onGold : app.skin.text)
+                            Text("\(AR.n(Int((604.0 / Double(d)).rounded(.up)))) صفحة يوميًا").rawhText(11).foregroundStyle(on ? app.skin.onGold.opacity(0.8) : app.skin.sub)
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 14)
+                        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(on ? app.skin.gold : app.skin.gold.opacity(0.08)))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(app.skin.line, lineWidth: on ? 0 : 0.8))
+                    }
+                    .buttonStyle(PressScale())
+                }
+            }
+            Button {
+                withAnimation(.spring) { app.s.khatmaStart = AR.dayKey(); app.s.khatmaPage = 0 }
+            } label: {
+                Label("ابدأ الختمة", systemImage: "play.fill").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(GoldButtonStyle(skin: app.skin))
+        }
+    }
+
+    private var active: some View {
+        let page = app.s.khatmaPage
+        let diff = page - target
+        return VStack(spacing: 14) {
+            ZStack {
+                Card(highlight: true) {
+                    VStack(spacing: 14) {
+                        ZStack {
+                            ProgressRing(progress: Double(page) / Double(Self.pages), color: app.skin.gold, track: app.skin.gold.opacity(0.15), width: 10)
+                            VStack(spacing: 2) {
+                                Text("الجزء \(AR.n(juz))").rawhText(13, .semibold).foregroundStyle(app.skin.gold)
+                                Text(AR.n(page)).rawhText(38, .bold).foregroundStyle(app.skin.text).contentTransition(.numericText())
+                                Text("من ٦٠٤ صفحة").rawhText(12).foregroundStyle(app.skin.sub)
+                            }
+                        }
+                        .frame(width: 170, height: 170)
+                        Text("اليوم \(AR.n(min(dayIndex, app.s.khatmaDays))) من \(AR.n(app.s.khatmaDays))").rawhText(14, .semibold).foregroundStyle(app.skin.text)
+                        Label(status(diff), systemImage: diff >= 0 ? "checkmark.seal.fill" : "hourglass")
+                            .rawhText(13, .semibold)
+                            .foregroundStyle(diff >= 0 ? app.skin.green : Color.orange)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                CelebrationBurst(trigger: burst, color: app.skin.gold).allowsHitTesting(false)
+            }
+
+            Card {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Image(systemName: "bookmark.fill").foregroundStyle(app.skin.gold)
+                        Text("وِرد اليوم").rawhText(15, .bold).foregroundStyle(app.skin.text)
+                        Spacer()
+                        Text("\(AR.n(perDay)) صفحة").rawhText(13).foregroundStyle(app.skin.sub)
+                    }
+                    Text(page >= target ? "أنهيت وِرد اليوم، جزاك الله خيرًا" : "من صفحة \(AR.n(page + 1)) إلى صفحة \(AR.n(target))")
+                        .rawhText(14).foregroundStyle(app.skin.sub)
+                }
+            }
+
+            HStack(spacing: 10) {
+                stepButton("minus", -1)
+                Button { set(target) } label: {
+                    Label("قرأت وِرد اليوم", systemImage: "checkmark").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GoldButtonStyle(skin: app.skin))
+                .disabled(page >= target)
+                stepButton("plus", 1)
+            }
+            HStack(spacing: 10) {
+                Button("+ ٥ صفحات") { set(page + 5) }.buttonStyle(GhostButtonStyle(skin: app.skin))
+                Button("+ جزء") { set(page + 20) }.buttonStyle(GhostButtonStyle(skin: app.skin))
+            }
+            Button("إلغاء الختمة") { confirmReset = true }
+                .rawhText(13).foregroundStyle(app.skin.sub).padding(.top, 4)
+        }
+        .sensoryFeedback(.success, trigger: burst)
+    }
+
+    private func status(_ diff: Int) -> String {
+        if diff > 0 { return "متقدّم بـ \(AR.n(diff)) صفحة، ما شاء الله" }
+        if diff < 0 { return "باقي عليك \(AR.n(-diff)) صفحة لتلحق خطتك" }
+        return "على الموعد تمامًا"
+    }
+
+    private func stepButton(_ sym: String, _ d: Int) -> some View {
+        Button { set(app.s.khatmaPage + d) } label: {
+            Image(systemName: sym).font(.system(size: 17, weight: .bold)).foregroundStyle(app.skin.gold)
+                .frame(width: 50, height: 50).glassCircle(skin: app.skin)
+        }
+        .buttonStyle(PressScale())
+    }
+
+    private func set(_ p: Int) {
+        let v = max(0, min(Self.pages, p))
+        withAnimation(.snappy) { app.s.khatmaPage = v }
+        if v >= Self.pages {
+            burst += 1
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                withAnimation { app.s.khatmaCount += 1; app.s.khatmaStart = ""; app.s.khatmaPage = 0 }
+            }
+        }
+    }
+}
+
+// MARK: - التقويم الهجري
+
+struct HijriCalendarView: View {
+    @EnvironmentObject var app: AppState
+    @State private var offset = 0
+    @State private var selected: Date? = nil
+
+    private struct Day: Identifiable { let id: Int; let date: Date?; let h: Int }
+
+    private var monthStart: Date {
+        let h = AR.hijri
+        let base = h.date(byAdding: .month, value: offset, to: app.now) ?? app.now
+        let c = h.dateComponents([.year, .month], from: base)
+        return h.date(from: DateComponents(year: c.year, month: c.month, day: 1)).map { AR.gregorian.startOfDay(for: $0) } ?? base
+    }
+    private var days: [Day] {
+        let h = AR.hijri, g = AR.gregorian
+        let start = monthStart
+        let count = h.range(of: .day, in: .month, for: start)?.count ?? 30
+        let lead = (g.component(.weekday, from: start) - 1) % 7   // الأسبوع يبدأ الأحد
+        var out: [Day] = (0..<lead).map { Day(id: -1 - $0, date: nil, h: 0) }
+        for i in 0..<count { out.append(Day(id: i + 1, date: g.date(byAdding: .day, value: i, to: start), h: i + 1)) }
+        return out
+    }
+    private var hMonth: Int { AR.hijri.component(.month, from: monthStart) }
+    private func occasion(_ day: Int) -> Occasion? { DB.data.occasions.first { $0.m == hMonth && $0.d == day } }
+
+    var body: some View {
+        SubScreen(title: "التقويم الهجري", subtitle: "بتقويم أم القرى") {
+            Card(padding: 14) {
+                VStack(spacing: 14) {
+                    HStack {
+                        navButton("chevron.right", -1)
+                        Spacer()
+                        VStack(spacing: 2) {
+                            Text(AR.fmt("MMMM y", hijri: true).string(from: monthStart) + " هـ").rawhText(19, .bold).foregroundStyle(app.skin.text)
+                            Text(gregSpan).rawhText(12).foregroundStyle(app.skin.sub)
+                        }
+                        Spacer()
+                        navButton("chevron.left", 1)
+                    }
+                    let wd = ["أحد", "إثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"]
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 6) {
+                        ForEach(wd, id: \.self) { Text($0).rawhText(10.5, .semibold).foregroundStyle(app.skin.sub).lineLimit(1).minimumScaleFactor(0.7) }
+                        ForEach(days) { d in cell(d) }
+                    }
+                    .simultaneousGesture(DragGesture(minimumDistance: 30).onEnded { v in
+                        guard abs(v.translation.width) > abs(v.translation.height) * 1.5 else { return }
+                        withAnimation(.snappy) { offset += v.translation.width > 0 ? 1 : -1; selected = nil }
+                    })
+                    HStack(spacing: 14) {
+                        legend(app.skin.gold, "اليوم", filled: true)
+                        legend(app.skin.green, "الأيام البيض", filled: false)
+                        legend(app.skin.gold, "مناسبة", filled: false, dot: true)
+                    }
+                    if offset != 0 {
+                        Button("ارجع لهذا الشهر") { withAnimation(.snappy) { offset = 0; selected = nil } }
+                            .rawhText(13, .semibold).tint(app.skin.gold)
+                    }
+                }
+            }
+            if let s = selected { detail(s) }
+            let occs = DB.data.occasions.filter { $0.m == hMonth }.sorted { $0.d < $1.d }
+            if !occs.isEmpty {
+                SectionTitle(title: "مناسبات هذا الشهر")
+                VStack(spacing: 10) {
+                    ForEach(occs, id: \.self) { o in
+                        Card(padding: 14) {
+                            HStack(spacing: 12) {
+                                Image(systemName: o.ic).foregroundStyle(app.skin.gold).frame(width: 28)
+                                Text(o.t).rawhText(15, .semibold).foregroundStyle(app.skin.text)
+                                Spacer()
+                                Text("\(AR.n(o.d)) \(AR.fmt("MMMM", hijri: true).string(from: monthStart))").rawhText(12.5).foregroundStyle(app.skin.sub)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var gregSpan: String {
+        let end = AR.gregorian.date(byAdding: .day, value: max(0, (days.last?.h ?? 30) - 1), to: monthStart) ?? monthStart
+        let f = AR.fmt("MMMM y")
+        let a = f.string(from: monthStart), b = f.string(from: end)
+        return a == b ? a : "\(AR.fmt("MMMM").string(from: monthStart)) – \(b)"
+    }
+
+    private func navButton(_ sym: String, _ d: Int) -> some View {
+        Button { withAnimation(.snappy) { offset += d; selected = nil } } label: {
+            Image(systemName: sym).font(.system(size: 14, weight: .bold)).foregroundStyle(app.skin.gold)
+                .frame(width: 38, height: 38).glassCircle(skin: app.skin)
+        }
+        .buttonStyle(PressScale())
+    }
+
+    @ViewBuilder private func cell(_ d: Day) -> some View {
+        if let date = d.date {
+            let today = AR.gregorian.isDate(date, inSameDayAs: app.now)
+            let white = (13...15).contains(d.h)
+            let occ = occasion(d.h) != nil
+            let sel = selected.map { AR.gregorian.isDate($0, inSameDayAs: date) } ?? false
+            Button { withAnimation(.snappy) { selected = sel ? nil : date } } label: {
+                VStack(spacing: 1) {
+                    Text(AR.n(d.h)).rawhText(16, today ? .bold : .semibold).foregroundStyle(today ? app.skin.onGold : app.skin.text)
+                    Text(AR.n(AR.gregorian.component(.day, from: date))).rawhText(9).foregroundStyle(today ? app.skin.onGold.opacity(0.75) : app.skin.sub)
+                    Circle().fill(occ ? (today ? app.skin.onGold : app.skin.gold) : .clear).frame(width: 4, height: 4)
+                }
+                .frame(maxWidth: .infinity).frame(height: 48)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(today ? app.skin.gold : (sel ? app.skin.gold.opacity(0.16) : .clear)))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(white && !today ? app.skin.green.opacity(0.7) : .clear, lineWidth: 1.2))
+            }
+            .buttonStyle(.plain)
+        } else {
+            Color.clear.frame(height: 48)
+        }
+    }
+
+    private func legend(_ c: Color, _ t: String, filled: Bool, dot: Bool = false) -> some View {
+        HStack(spacing: 5) {
+            if dot { Circle().fill(c).frame(width: 6, height: 6) }
+            else if filled { RoundedRectangle(cornerRadius: 3).fill(c).frame(width: 12, height: 12) }
+            else { RoundedRectangle(cornerRadius: 3).strokeBorder(c, lineWidth: 1.2).frame(width: 12, height: 12) }
+            Text(t).rawhText(11).foregroundStyle(app.skin.sub)
+        }
+    }
+
+    private func detail(_ d: Date) -> some View {
+        let h = AR.hijri.component(.day, from: d)
+        let wd = AR.gregorian.component(.weekday, from: d)
+        var notes: [String] = []
+        if let o = occasion(h) { notes.append(o.t) }
+        if (13...15).contains(h) { notes.append("من الأيام البيض، يُستحب صيامها") }
+        if wd == 2 || wd == 5 { notes.append("يُستحب صيام الاثنين والخميس") }
+        if wd == 6 { notes.append("يوم الجمعة: سورة الكهف والإكثار من الصلاة على النبي ﷺ") }
+        return Card(highlight: true) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(AR.fmt("EEEE d MMMM y", hijri: true).string(from: d) + " هـ").rawhText(16, .bold).foregroundStyle(app.skin.text)
+                Text(AR.fmt("d MMMM y").string(from: d) + " م").rawhText(13).foregroundStyle(app.skin.gold)
+                ForEach(notes, id: \.self) { n in
+                    Label(n, systemImage: "sparkle").rawhText(13).foregroundStyle(app.skin.sub)
+                }
+            }
+        }
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+}
+
+// MARK: - حاسبة الزكاة
+
+struct ZakatView: View {
+    @EnvironmentObject var app: AppState
+    @AppStorage("rawh.zakat.goldPrice") private var goldPrice = ""
+    @AppStorage("rawh.zakat.silverPrice") private var silverPrice = ""
+    @AppStorage("rawh.zakat.basis") private var basis = 0      // ٠ الأقل من النصابين، ١ الذهب
+    @State private var cash = ""
+    @State private var gold = ""
+    @State private var silver = ""
+    @State private var trade = ""
+    @State private var owed = ""
+    @State private var debts = ""
+    @FocusState private var focus: Bool
+
+    static func num(_ s: String) -> Double {
+        let map: [Character: Character] = ["٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4", "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9", "٫": "."]
+        let t = String(s.compactMap { c -> Character? in
+            if let m = map[c] { return m }
+            if c == "٬" || c == "," || c == " " { return nil }
+            return c
+        })
+        return Double(t) ?? 0
+    }
+    private func money(_ v: Double) -> String {
+        let f = NumberFormatter(); f.locale = AR.locale; f.numberStyle = .decimal; f.maximumFractionDigits = 2
+        return (f.string(from: NSNumber(value: v)) ?? "\(v)") + " ريال"
+    }
+
+    var body: some View {
+        let gp = Self.num(goldPrice), sp = Self.num(silverPrice)
+        let total = Self.num(cash) + Self.num(gold) * gp + Self.num(silver) * sp + Self.num(trade) + Self.num(owed) - Self.num(debts)
+        let goldNisab = 85 * gp, silverNisab = 595 * sp
+        let nisab: Double = basis == 1 ? goldNisab : ([goldNisab, silverNisab].filter { $0 > 0 }.min() ?? 0)
+        let reached = nisab > 0 && total >= nisab
+        let note: String = nisab == 0 ? "أدخل سعر جرام الذهب لمعرفة النصاب" : (reached ? "بلغ مالك النصاب" : "لم يبلغ مالك النصاب، فلا زكاة فيه")
+        let noteIcon: String = nisab == 0 ? "info.circle" : (reached ? "checkmark.seal.fill" : "minus.circle")
+        let noteColor: Color = reached ? app.skin.green : app.skin.sub
+        let due: Double = reached ? total * 0.025 : 0
+        SubScreen(title: "حاسبة الزكاة", subtitle: "ربع العشر (٢٫٥٪) فيما بلغ النصاب وحال عليه الحول") {
+            Card(highlight: true) {
+                VStack(spacing: 8) {
+                    Text("الزكاة الواجبة").rawhText(13).foregroundStyle(app.skin.sub)
+                    Text(money(due)).rawhText(32, .bold).foregroundStyle(app.skin.gold)
+                        .contentTransition(.numericText()).minimumScaleFactor(0.6).lineLimit(1)
+                    Label(note, systemImage: noteIcon).rawhText(13, .semibold).foregroundStyle(noteColor)
+                    Divider().overlay(app.skin.line)
+                    HStack {
+                        stat("مجموع المال", money(max(0, total)))
+                        stat("النصاب", nisab > 0 ? money(nisab) : "—")
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+
+            SectionTitle(title: "أموالك")
+            VStack(spacing: 0) {
+                field("banknote.fill", "النقد والأرصدة", "ريال", $cash)
+                sep; field("circle.hexagongrid.fill", "الذهب (عيار ٢٤)", "جرام", $gold)
+                sep; field("circle.grid.cross.fill", "الفضة", "جرام", $silver)
+                sep; field("shippingbox.fill", "عروض التجارة", "ريال", $trade)
+                sep; field("arrow.down.left.circle.fill", "ديون لك مرجوّة السداد", "ريال", $owed)
+                sep; field("arrow.up.right.circle.fill", "ديون عليك حالّة", "ريال", $debts)
+            }
+            .surface(20, skin: app.skin)
+
+            SectionTitle(title: "الأسعار والنصاب")
+            VStack(spacing: 0) {
+                field("scalemass.fill", "سعر جرام الذهب اليوم", "ريال", $goldPrice)
+                sep; field("scalemass", "سعر جرام الفضة اليوم", "ريال", $silverPrice)
+            }
+            .surface(20, skin: app.skin)
+            Picker("النصاب", selection: $basis) {
+                Text("أقل النصابين").tag(0)
+                Text("نصاب الذهب").tag(1)
+            }
+            .pickerStyle(.segmented)
+            Text("نصاب الذهب ٨٥ جرامًا، ونصاب الفضة ٥٩٥ جرامًا. كثير من أهل العلم يعتبر في الأوراق النقدية أقلَّ النصابين لأنه أنفع للفقراء. الحاسبة للتقريب، وارجع لأهل العلم فيما أشكل عليك.")
+                .rawhText(12).foregroundStyle(app.skin.sub).lineSpacing(4)
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("تم") { focus = false }.tint(app.skin.gold)
+            }
+        }
+    }
+
+    private var sep: some View { Rectangle().fill(app.skin.line).frame(height: 0.6).padding(.leading, 52) }
+
+    private func stat(_ t: String, _ v: String) -> some View {
+        VStack(spacing: 3) {
+            Text(t).rawhText(11.5).foregroundStyle(app.skin.sub)
+            Text(v).rawhText(14, .bold).foregroundStyle(app.skin.text).lineLimit(1).minimumScaleFactor(0.6)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func field(_ sym: String, _ title: String, _ unit: String, _ text: Binding<String>) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: sym).font(.system(size: 17)).foregroundStyle(app.skin.gold).frame(width: 26)
+            Text(title).rawhText(14.5, .medium).foregroundStyle(app.skin.text).lineLimit(1).minimumScaleFactor(0.8)
+            Spacer(minLength: 8)
+            TextField("٠", text: text)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.leading)
+                .rawhText(15, .semibold)
+                .foregroundStyle(app.skin.text)
+                .frame(width: 96)
+                .focused($focus)
+            Text(unit).rawhText(12).foregroundStyle(app.skin.sub).frame(width: 34, alignment: .leading)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
     }
 }
 
@@ -4266,12 +5191,7 @@ struct IntroView: View {
             Text("اجعله لك").rawhText(28, .bold).foregroundStyle(app.skin.text)
             Text("تقدر تغيّر هذا لاحقًا من الإعدادات.").rawhText(14).foregroundStyle(app.skin.sub)
             Text("مدينتك").rawhText(14, .semibold).foregroundStyle(app.skin.gold)
-            Picker("المدينة", selection: Binding(get: { app.s.cityId }, set: { app.s.cityId = $0 })) {
-                ForEach(DB.data.cities) { Text($0.n).tag($0.id) }
-            }
-            .pickerStyle(.wheel)
-            .frame(height: 120)
-            .surface(16, skin: app.skin)
+            CityRowButton()
             Text("المظهر").rawhText(14, .semibold).foregroundStyle(app.skin.gold)
             HStack(spacing: 10) {
                 ForEach(Skin.allCases) { k in
@@ -4405,12 +5325,66 @@ import ActivityKit
 // MARK: - اختيار المدينة في إعدادات الودجت
 
 enum CityOption: String, AppEnum {
-    case riyadh, makkah, madinah, jeddah, dammam, abha, tabuk, hail, buraydah, jazan
+    case riyadh, kharj, majmaah, dawadmi, zulfi, shaqra, afif, quwayiyah, wadi, makkah, jeddah, taif, rabigh, qunfudhah, lith, madinah, yanbu, ula, badr, buraydah, unayzah, rass, bukayriyah, dammam, khobar, dhahran, ahsa, jubail, qatif, hafar, khafji, abha, khamis, bisha, namas, muhayil, tabuk, wajh, duba, tayma, hail, baqaa, arar, rafha, turaif, jazan, sabya, abuarish, samtah, najran, sharurah, baha, baljurashi, sakaka, dumah, qurayyat
 
     static var typeDisplayRepresentation: TypeDisplayRepresentation = "المدينة"
     static var caseDisplayRepresentations: [CityOption: DisplayRepresentation] = [
-        .riyadh: "الرياض", .makkah: "مكة المكرمة", .madinah: "المدينة المنورة", .jeddah: "جدة", .dammam: "الدمام",
-        .abha: "أبها", .tabuk: "تبوك", .hail: "حائل", .buraydah: "بريدة", .jazan: "جازان"
+        .riyadh: "الرياض",
+        .kharj: "الخرج",
+        .majmaah: "المجمعة",
+        .dawadmi: "الدوادمي",
+        .zulfi: "الزلفي",
+        .shaqra: "شقراء",
+        .afif: "عفيف",
+        .quwayiyah: "القويعية",
+        .wadi: "وادي الدواسر",
+        .makkah: "مكة المكرمة",
+        .jeddah: "جدة",
+        .taif: "الطائف",
+        .rabigh: "رابغ",
+        .qunfudhah: "القنفذة",
+        .lith: "الليث",
+        .madinah: "المدينة المنورة",
+        .yanbu: "ينبع",
+        .ula: "العُلا",
+        .badr: "بدر",
+        .buraydah: "بريدة",
+        .unayzah: "عنيزة",
+        .rass: "الرس",
+        .bukayriyah: "البكيرية",
+        .dammam: "الدمام",
+        .khobar: "الخبر",
+        .dhahran: "الظهران",
+        .ahsa: "الأحساء",
+        .jubail: "الجبيل",
+        .qatif: "القطيف",
+        .hafar: "حفر الباطن",
+        .khafji: "الخفجي",
+        .abha: "أبها",
+        .khamis: "خميس مشيط",
+        .bisha: "بيشة",
+        .namas: "النماص",
+        .muhayil: "محايل عسير",
+        .tabuk: "تبوك",
+        .wajh: "الوجه",
+        .duba: "ضباء",
+        .tayma: "تيماء",
+        .hail: "حائل",
+        .baqaa: "بقعاء",
+        .arar: "عرعر",
+        .rafha: "رفحاء",
+        .turaif: "طريف",
+        .jazan: "جازان",
+        .sabya: "صبيا",
+        .abuarish: "أبو عريش",
+        .samtah: "صامطة",
+        .najran: "نجران",
+        .sharurah: "شرورة",
+        .baha: "الباحة",
+        .baljurashi: "بلجرشي",
+        .sakaka: "سكاكا",
+        .dumah: "دومة الجندل",
+        .qurayyat: "القريات"
     ]
 }
 
