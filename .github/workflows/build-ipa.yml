@@ -53,10 +53,10 @@ jobs:
           </svg>
           EOF
           mk() { sed -e "s/BG1/$2/g" -e "s/BG2/$3/g" -e "s/LINE/$4/g" -e "s/GLOW/$5/g" ios/icons/star.svg > "ios/icons/star-$1.svg"; }
-          mk lapis '#24468A' '#0E1C3D' '#E2C27A' '#E6C37A'
-          mk ivory '#F8F0DE' '#E7D6B2' '#1F3B73' '#A9813A'
-          mk emerald '#14473a' '#062019' '#E2C88E' '#D9BC7F'
-          mk night '#1a2220' '#050807' '#E2C88E' '#D9BC7F'
+          mk night '#1B2452' '#04071A' '#F3D38C' '#F3D38C'
+          mk fajr '#2B2A6A' '#E39C9B' '#FFFFFF' '#FFE2D0'
+          mk duha '#1E5FB4' '#9DD0F7' '#FFFFFF' '#FFF1C2'
+          mk maghrib '#3A2363' '#EE8248' '#FFE3C2' '#FFD6B5'
           mk gold '#F1D9A2' '#B98E45' '#0B2A22' '#0B2A22'
           noalpha() { sips -s format jpeg -s formatOptions 100 "$1" --out /tmp/i.jpg >/dev/null && sips -s format png /tmp/i.jpg --out "$2" >/dev/null; }
           seticon() {
@@ -64,11 +64,11 @@ jobs:
             noalpha "$2" "ios/Rawh/Assets.xcassets/$1.appiconset/icon.png"
             echo '{"images":[{"filename":"icon.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"author":"xcode","version":1}}' > "ios/Rawh/Assets.xcassets/$1.appiconset/Contents.json"
           }
-          for n in lapis ivory emerald night gold; do rsvg-convert -w 1024 -h 1024 "ios/icons/star-$n.svg" -o "ios/icons/star-$n.png"; done
-          seticon AppIcon ios/icons/star-lapis.png
-          seticon AppIcon-Ivory ios/icons/star-ivory.png
-          seticon AppIcon-Emerald ios/icons/star-emerald.png
-          seticon AppIcon-Night ios/icons/star-night.png
+          for n in night fajr duha maghrib gold; do rsvg-convert -w 1024 -h 1024 "ios/icons/star-$n.svg" -o "ios/icons/star-$n.png"; done
+          seticon AppIcon ios/icons/star-night.png
+          seticon AppIcon-Fajr ios/icons/star-fajr.png
+          seticon AppIcon-Duha ios/icons/star-duha.png
+          seticon AppIcon-Maghrib ios/icons/star-maghrib.png
           seticon AppIcon-Gold ios/icons/star-gold.png
           if [ -f icon-1024.png ]; then cp icon-1024.png ios/icons/mihrab.png; else sips -z 1024 1024 icon-512.png --out ios/icons/mihrab.png >/dev/null; fi
           seticon AppIcon-Mihrab ios/icons/mihrab.png
@@ -82,7 +82,7 @@ jobs:
           get scheherazadenew/ScheherazadeNew-Regular.ttf ScheherazadeNew-Regular.ttf
           get "notonaskharabic/NotoNaskhArabic%5Bwght%5D.ttf" NotoNaskhArabic.ttf
           ls -l ios/Rawh/Fonts
-          echo '{"colors":[{"idiom":"universal","color":{"color-space":"srgb","components":{"red":"0.965","green":"0.933","blue":"0.863","alpha":"1.000"}}}],"info":{"author":"xcode","version":1}}' > ios/Rawh/Assets.xcassets/LaunchBG.colorset/Contents.json
+          echo '{"colors":[{"idiom":"universal","color":{"color-space":"srgb","components":{"red":"0.016","green":"0.027","blue":"0.102","alpha":"1.000"}}}],"info":{"author":"xcode","version":1}}' > ios/Rawh/Assets.xcassets/LaunchBG.colorset/Contents.json
 
           cat > ios/project.yml <<'EOF'
           name: Rawh
@@ -103,8 +103,8 @@ jobs:
                 path: Rawh/Info.plist
                 properties:
                   CFBundleDisplayName: "رَوْح"
-                  CFBundleShortVersionString: "4.1"
-                  CFBundleVersion: "10"
+                  CFBundleShortVersionString: "5.0"
+                  CFBundleVersion: "11"
                   NSSupportsLiveActivities: true
                   CFBundleURLTypes:
                     - CFBundleURLName: com.rawh.adhkar
@@ -141,8 +141,8 @@ jobs:
                 path: RawhWidgets/Info.plist
                 properties:
                   CFBundleDisplayName: "رَوْح"
-                  CFBundleShortVersionString: "4.1"
-                  CFBundleVersion: "10"
+                  CFBundleShortVersionString: "5.0"
+                  CFBundleVersion: "11"
                   NSExtension:
                     NSExtensionPointIdentifier: com.apple.widgetkit-extension
               settings:
@@ -187,5 +187,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest -y --cleanup-tag || true
-          gh release create latest Rawh.ipa --title "رَوْح — آخر نسخة" --notes "رَوْح ٤.١: تصميم المخطوطة المذهّبة، حركات وانتقالات، الأوسمة وجدول المواقيت والتخصيص والنسخ الاحتياطي ودعم الآيباد، وضع القراءة وخطوط المصحف، صلواتي والختمة والتقويم والزكاة. ثبّته عن طريق Sideloadly أو AltStore."
- 
+          gh release create latest Rawh.ipa --title "رَوْح — آخر نسخة" --notes "رَوْح ٥.٠: هوية السماء الحيّة، تنقّل جديد، وأداء أسرع"
